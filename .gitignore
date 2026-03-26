@@ -1,0 +1,57 @@
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.python-version
+.venv/
+venv/
+env/
+ENV/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+.cache/
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Data artifacts (common in omics/ML workflows)
+data/
+outputs/
+results/
+checkpoints/

@@ -1,0 +1,38 @@
+data:
+  x_rna_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_mRNA.csv
+  x_cnv_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_CNV_1_channel.csv
+  x_proteomics_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_proteomics.csv
+  y_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_label_num.csv
+  val_split: 0.2
+  use_stratified_kfold: true
+  n_folds: 5
+
+model:
+  name: concat_mlp
+  input_dims:
+    Proteomics: 223
+    CNV: 19273
+    mRNA: 19580
+  num_classes: 4
+  hidden_dim: 256
+  dropout: 0.3
+  fusion_hidden: 128
+  use_gated_fusion: true
+
+train:
+  epochs: 50
+  lr: 5e-5
+  weight_decay: 1e-5
+  batch_size: 32
+  num_workers: 4
+  seed: 42
+  normalize: false
+  early_stopping:
+    enable: true
+    patience: 10
+    min_delta: 0.0
+
+logging:
+  log_dir: lightning_logs
+  log_name: brca_concat_mlp_tune_lr
+  logger_type: tensorboard
