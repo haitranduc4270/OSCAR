@@ -10,13 +10,16 @@ import pandas as pd
 
 from datamodule import BRCADataModule
 from models.self_attn_fusion import SelfAttentionFusionModel
-from train import extract_omics_config, set_seed
+from train import extract_omics_config, resolve_pre_split_fold_dir, set_seed
 
 
 def build_datamodule(cfg):
     """Build BRCADataModule consistent with training config."""
     data_cfg = cfg["data"]
     train_cfg = cfg["train"]
+
+    cf = data_cfg.get("current_fold", 0)
+    pre_fold_dir = resolve_pre_split_fold_dir(data_cfg, cf)
 
     dm = BRCADataModule(
         omics_config=extract_omics_config(data_cfg),
@@ -26,9 +29,10 @@ def build_datamodule(cfg):
         val_split=data_cfg.get("val_split", 0.2),
         seed=train_cfg.get("seed", 42),
         normalize=train_cfg.get("normalize", True),
-        use_stratified_kfold=data_cfg.get("use_stratified_kfold", False),
+        use_stratified_kfold=False if pre_fold_dir else data_cfg.get("use_stratified_kfold", False),
         n_folds=data_cfg.get("n_folds", 5),
-        current_fold=data_cfg.get("current_fold", 0),
+        current_fold=cf,
+        pre_split_fold_dir=pre_fold_dir,
     )
     dm.setup(stage="fit")
     return dm

@@ -1,11 +1,16 @@
 data:
-  x_rna_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_mRNA.csv
-  x_cnv_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_CNV_1_channel.csv
-  x_proteomics_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_proteomics.csv
-  y_path: /home3/tuannd/Cancer-Multi-Omics-Benchmark/csv/processed/BRCA_label_num.csv
+  x_rna_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_mRNA.csv
+  x_cnv_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_CNV_1_channel.csv
+  x_proteomics_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_proteomics.csv
+  y_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_label_num.csv
+  # Run once from repo root: python prepare_kfold_splits.py --input-dir csv/processed/BRCA
+  # Paths above stay the same (stems for fold filenames; pretrain still uses full CSVs).
+  pre_split_base: csv/processed/BRCA/5-fold
   val_split: 0.2
   use_stratified_kfold: true
   n_folds: 5
+  # For visualize_attention.py when using pre_split_base
+  current_fold: 0
 
 model:
   name: self_attn_fusion

@@ -21,7 +21,11 @@ Verify Python is available:
 python -V
 ```
 
-## 2) Run training
+## 2) prepare 5 folds data
+
+python prepare_kfold_splits.py --input-dir csv/processed/BRCA --n-folds 5 --seed 42
+
+## 3) Run training
 
 Training entrypoint:
 
@@ -40,7 +44,7 @@ Notes:
 - Logs/checkpoints are written under `lightning_logs/` (configurable via `logging.log_dir` and `logging.log_name`).
 - Data file paths are configured inside each YAML under `data.*`.
 
-## 3) Visualize attention (gradient feature importance)
+## 4) Visualize attention (gradient feature importance)
 
 Visualization entrypoint:
 

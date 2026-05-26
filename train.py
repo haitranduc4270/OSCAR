@@ -77,6 +77,14 @@ def create_logger(cfg, fold=None):
     else:  # tensorboard (default)
         return TensorBoardLogger(save_dir=log_dir, name=log_name)
 
+def resolve_pre_split_fold_dir(data_cfg, fold_index_zero_based):
+    """Path to fold_k directory under data.pre_split_base, or None if not using on-disk folds."""
+    base = data_cfg.get("pre_split_base")
+    if not base:
+        return None
+    return os.path.join(str(base), f"fold_{fold_index_zero_based + 1}")
+
+
 def extract_omics_config(data_cfg):
     """
     Extract omics configuration from data config section.
@@ -220,6 +228,7 @@ def main(config_path):
             print(f"Fold {fold + 1}/{n_folds}")
             print(f"{'='*50}")
             
+            pre_fold_dir = resolve_pre_split_fold_dir(cfg["data"], fold)
             dm = BRCADataModule(
                 omics_config=extract_omics_config(cfg["data"]),
                 y_path=cfg["data"]["y_path"],
@@ -228,9 +237,10 @@ def main(config_path):
                 val_split=cfg["data"]["val_split"],
                 seed=cfg["train"]["seed"],
                 normalize=cfg["train"]["normalize"],
-                use_stratified_kfold=True,
+                use_stratified_kfold=pre_fold_dir is None,
                 n_folds=n_folds,
-                current_fold=fold
+                current_fold=fold,
+                pre_split_fold_dir=pre_fold_dir,
             )
 
             # Ensure we have feature dimensions from the datamodule before model init

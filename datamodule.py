@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 import pandas as pd
@@ -48,6 +50,7 @@ class BRCADataModule(LightningDataModule):
         use_stratified_kfold: bool = False,
         n_folds: int = 5,
         current_fold: int = 0,
+        pre_split_fold_dir: str | None = None,
     ):
         super().__init__()
         
@@ -65,8 +68,56 @@ class BRCADataModule(LightningDataModule):
         self.use_stratified_kfold = use_stratified_kfold
         self.n_folds = n_folds
         self.current_fold = current_fold
+        self.pre_split_fold_dir = pre_split_fold_dir
 
     def setup(self, stage=None):
+        if self.pre_split_fold_dir:
+            fold_dir = Path(self.pre_split_fold_dir)
+            if not fold_dir.is_dir():
+                raise NotADirectoryError(f"pre_split_fold_dir not found: {fold_dir}")
+
+            def split_paths(stem: str) -> tuple[Path, Path]:
+                tr = fold_dir / f"{stem}_train.csv"
+                va = fold_dir / f"{stem}_val.csv"
+                if not tr.is_file() or not va.is_file():
+                    raise FileNotFoundError(
+                        f"Expected {tr.name} and {va.name} under {fold_dir}"
+                    )
+                return tr, va
+
+            y_stem = Path(self.y_path).stem
+            y_train_path, y_val_path = split_paths(y_stem)
+
+            omic_dfs_train = {}
+            omic_dfs_val = {}
+            for name, path in self.paths.items():
+                stem = Path(path).stem
+                p_train, p_val = split_paths(stem)
+                omic_dfs_train[name] = pd.read_csv(p_train, index_col=0)
+                omic_dfs_val[name] = pd.read_csv(p_val, index_col=0)
+
+            X_train = {name: df.T for name, df in omic_dfs_train.items()}
+            X_val = {name: df.T for name, df in omic_dfs_val.items()}
+
+            y_train = pd.read_csv(y_train_path).iloc[:, 0].to_numpy()
+            y_val = pd.read_csv(y_val_path).iloc[:, 0].to_numpy()
+
+            if self.normalize:
+                X_train_dict = {}
+                X_val_dict = {}
+                for name in X_train:
+                    scaler = StandardScaler()
+                    X_train_dict[name] = scaler.fit_transform(X_train[name]).astype(np.float32)
+                    X_val_dict[name] = scaler.transform(X_val[name]).astype(np.float32)
+            else:
+                X_train_dict = {name: X.to_numpy(dtype=np.float32) for name, X in X_train.items()}
+                X_val_dict = {name: X.to_numpy(dtype=np.float32) for name, X in X_val.items()}
+
+            self.train_set = MultiOmicDataset(X_train_dict, y_train)
+            self.val_set = MultiOmicDataset(X_val_dict, y_val)
+            self.feature_dims = {name: X_train_dict[name].shape[1] for name in X_train_dict}
+            return
+
         omic_dfs = {name: pd.read_csv(path, index_col=0) for name, path in self.paths.items()}
 
         X_dict = {name: df.T for name, df in omic_dfs.items()}
