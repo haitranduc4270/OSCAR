@@ -59,3 +59,9 @@ checkpoints/
 # Lightning logs
 lightning_logs/
 attention_plots/
+
+# Other
+csv/*
+
+experiments/*
+scripts/*

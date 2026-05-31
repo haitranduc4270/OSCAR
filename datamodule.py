@@ -51,6 +51,7 @@ class BRCADataModule(LightningDataModule):
         n_folds: int = 5,
         current_fold: int = 0,
         pre_split_fold_dir: str | None = None,
+        pin_memory: bool | None = None,
     ):
         super().__init__()
         
@@ -69,6 +70,9 @@ class BRCADataModule(LightningDataModule):
         self.n_folds = n_folds
         self.current_fold = current_fold
         self.pre_split_fold_dir = pre_split_fold_dir
+        if pin_memory is None:
+            pin_memory = torch.cuda.is_available()
+        self.pin_memory = pin_memory
 
     def setup(self, stage=None):
         if self.pre_split_fold_dir:
@@ -154,7 +158,21 @@ class BRCADataModule(LightningDataModule):
         self.feature_dims = {name: X_dict[name].shape[1] for name in X_dict}
 
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers)
+        return DataLoader(
+            self.train_set,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.num_workers > 0,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers)
+        return DataLoader(
+            self.val_set,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.num_workers > 0,
+        )

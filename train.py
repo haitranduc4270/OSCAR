@@ -2,14 +2,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from datamodule import BRCADataModule
-from models.concat_mlp import ConcatMLP
-from models.vae_fusion import VAEFusionModel
-from models.ae_fusion import AEFusionModel
 from models.self_attn_fusion import SelfAttentionFusionModel
 import yaml
 import argparse
 import os
 import json
+import gc
 import torch
 import numpy as np
 import random
@@ -26,14 +24,41 @@ def create_early_stopping_callback(cfg):
         )
     return None
 
+def create_trainer_kwargs(cfg):
+    """Build shared Trainer kwargs from config."""
+    train_cfg = cfg.get("train", {})
+    kwargs = {
+        "max_epochs": train_cfg["epochs"],
+        "accelerator": "auto",
+        "devices": "auto",
+        "log_every_n_steps": 10,
+        "deterministic": True,
+    }
+    precision = train_cfg.get("precision")
+    if precision is not None:
+        kwargs["precision"] = precision
+    return kwargs
+
+
+def cleanup_fold_resources(*objects):
+    """Release GPU/CPU memory between k-fold iterations."""
+    for obj in objects:
+        del obj
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def create_model_checkpoint_callbacks(cfg, dirpath=None):
     """Create ModelCheckpoint callbacks to track best val_acc and best val_f1."""
     callbacks = []
-    
+    train_cfg = cfg.get("train", {})
+
     checkpoint_kwargs = {
         "save_top_k": 1,
-        "save_last": False,
-        "verbose": False
+        "save_last": train_cfg.get("save_last_checkpoint", False),
+        "save_weights_only": train_cfg.get("save_weights_only", True),
+        "verbose": False,
     }
     if dirpath is not None:
         checkpoint_kwargs["dirpath"] = dirpath
@@ -58,9 +83,37 @@ def create_model_checkpoint_callbacks(cfg, dirpath=None):
     
     return callbacks
 
+def report_dir_from_cfg(cfg) -> str:
+    log_cfg = cfg.get("logging", {})
+    return log_cfg.get("report_dir", log_cfg.get("log_dir", "lightning_logs"))
+
+
+def save_checkpoints_from_cfg(cfg) -> bool:
+    return bool(cfg.get("train", {}).get("save_checkpoints", True))
+
+
+def build_trainer_callbacks(cfg, fold=None):
+    early_stop_callback = create_early_stopping_callback(cfg)
+    if not save_checkpoints_from_cfg(cfg):
+        callbacks = [early_stop_callback] if early_stop_callback else []
+        return callbacks, [], early_stop_callback
+
+    log_cfg = cfg.get("logging", {})
+    log_dir = log_cfg.get("log_dir", "lightning_logs")
+    base_name = log_cfg.get("log_name", "experiment")
+    fold_log_name = f"{base_name}_fold_{fold + 1}" if fold is not None else base_name
+    checkpoint_dir = os.path.join(log_dir, fold_log_name, "checkpoints")
+    checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
+    callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+    return callbacks, checkpoint_callbacks, early_stop_callback
+
+
 def create_logger(cfg, fold=None):
     """Create a logger with configurable name and directory."""
     log_config = cfg.get("logging", {})
+    if not log_config.get("enabled", True):
+        return False
+
     log_dir = log_config.get("log_dir", "lightning_logs")
     log_name = log_config.get("log_name", "experiment")
     logger_type = log_config.get("logger_type", "tensorboard")  # "tensorboard" or "csv"
@@ -145,80 +198,6 @@ def main(config_path):
     n_folds = cfg["data"].get("n_folds", 5)
     model_name = cfg.get("model", {}).get("name") or cfg.get("model", {}).get("type")
 
-    # Optional global pretraining for VAE/AE Fusion before cross-validation
-    pretrained_state_dict = None
-    if model_name in ("vae_fusion", "ae_fusion"):
-        pre_cfg = cfg.get("train", {}).get("pretrain_all", {})
-        if pre_cfg.get("enable", False):
-            print("\n================ Global Pretraining ================")
-            # datamodule using the full dataset (no k-fold), optional small val split
-            pre_val_split = float(pre_cfg.get("val_split", 0.0))
-            pre_epochs = int(pre_cfg.get("epochs", cfg.get("model", {}).get("pretrain_epochs", 0)))
-
-            pre_dm = BRCADataModule(
-                omics_config=extract_omics_config(cfg["data"]),
-                y_path=cfg["data"]["y_path"],
-                batch_size=cfg["train"]["batch_size"],
-                num_workers=cfg["train"]["num_workers"],
-                val_split=pre_val_split,
-                seed=cfg["train"]["seed"],
-                normalize=cfg["train"]["normalize"],
-                use_stratified_kfold=False,
-            )
-            pre_dm.setup(stage="fit")
-
-            # Build model with pretrain_epochs set to the desired value so only unsupervised loss is used
-            if model_name == "vae_fusion":
-                pre_model = VAEFusionModel(
-                    input_dims=pre_dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    latent_dim=cfg["model"]["latent_dim"],
-                    hidden_dim=cfg["model"]["hidden_dim"],
-                    fusion_hidden=cfg["model"]["fusion_hidden"],
-                    dropout=cfg["model"]["dropout"],
-                    lr=float(cfg["train"]["lr"]),
-                    weight_decay=float(cfg["train"]["weight_decay"]),
-                    lambda_recon=cfg["model"]["lambda_recon"],
-                    lambda_kl=cfg["model"]["lambda_kl"],
-                    pretrain_epochs=pre_epochs,
-                )
-            else:  # ae_fusion
-                pre_model = AEFusionModel(
-                    input_dims=pre_dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    latent_dim=cfg["model"].get("latent_dim", 64),
-                    hidden_dim=cfg["model"].get("hidden_dim", 512),
-                    fusion_hidden=cfg["model"].get("fusion_hidden", 256),
-                    dropout=cfg["model"].get("dropout", 0.3),
-                    lr=float(cfg["train"].get("lr", 1e-4)),
-                    weight_decay=float(cfg["train"].get("weight_decay", 1e-5)),
-                    lambda_rec=cfg["model"].get("lambda_rec", 1.0),
-                    pretrain_epochs=pre_epochs,
-                    denoise_std=cfg["model"].get("denoise_std", 0.0),
-                    use_focal_loss=cfg["model"].get("use_focal_loss", False),
-                    focal_alpha=cfg["model"].get("focal_alpha", 1.0),
-                    focal_gamma=cfg["model"].get("focal_gamma", 2.0),
-                )
-
-            # Logger for pretraining
-            pre_log_cfg = cfg.get("logging", {}).copy()
-            pre_log_cfg["log_name"] = f"{pre_log_cfg.get('log_name', 'experiment')}_pretrain"
-            pre_logger = CSVLogger(save_dir=pre_log_cfg.get("log_dir", "lightning_logs"), name=pre_log_cfg["log_name"]) if pre_log_cfg.get("logger_type", "tensorboard").lower() == "csv" else TensorBoardLogger(save_dir=pre_log_cfg.get("log_dir", "lightning_logs"), name=pre_log_cfg["log_name"]) 
-
-            pre_trainer = pl.Trainer(
-                max_epochs=pre_epochs,
-                accelerator="auto",
-                devices="auto",
-                log_every_n_steps=10,
-                logger=pre_logger,
-                deterministic=True,  # For reproducibility
-            )
-            pre_trainer.fit(pre_model, datamodule=pre_dm)
-
-            # store weights to load into per-fold models
-            pretrained_state_dict = pre_model.state_dict()
-            print("================ Finished Global Pretraining ================\n")
-
     if use_stratified_kfold:
         # Run k-fold cross-validation
         print(f"Running stratified {n_folds}-fold cross-validation")
@@ -248,61 +227,7 @@ def main(config_path):
             dm.setup(stage="fit")
 
             model_name = cfg.get("model", {}).get("name") or cfg.get("model", {}).get("type")
-            if model_name == "concat_mlp":
-                model = ConcatMLP(
-                    input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    hidden_dim=cfg["model"]["hidden_dim"],
-                    dropout=cfg["model"]["dropout"],
-                    lr=float(cfg["train"]["lr"]),
-                    weight_decay=float(cfg["train"]["weight_decay"]),
-                    fusion_hidden=cfg["model"].get("fusion_hidden", 128),
-                    use_gated_fusion=cfg["model"].get("use_gated_fusion", True)
-                )
-            elif model_name == "vae_fusion":
-                model = VAEFusionModel(
-                    input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    latent_dim=cfg["model"]["latent_dim"],
-                    hidden_dim=cfg["model"]["hidden_dim"],
-                    fusion_hidden=cfg["model"]["fusion_hidden"],
-                    dropout=cfg["model"]["dropout"],
-                    lr=float(cfg["train"]["lr"]),
-                    weight_decay=float(cfg["train"]["weight_decay"]),
-                    lambda_recon=cfg["model"]["lambda_recon"],
-                    lambda_kl=cfg["model"]["lambda_kl"],
-                    pretrain_epochs=0  # ensure no per-fold pretraining
-                )
-                # Load pretrained weights if available
-                if pretrained_state_dict is not None:
-                    missing, unexpected = model.load_state_dict(pretrained_state_dict, strict=False)
-                    if len(missing) > 0 or len(unexpected) > 0:
-                        print(f"[Warning] When loading pretrained weights: missing={len(missing)}, unexpected={len(unexpected)}")
-                    # Freeze encoders for fine-tuning
-                    model.freeze_encoders()
-            elif model_name == "ae_fusion":
-                model = AEFusionModel(
-                    input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    latent_dim=cfg["model"].get("latent_dim", 64),
-                    hidden_dim=cfg["model"].get("hidden_dim", 512),
-                    fusion_hidden=cfg["model"].get("fusion_hidden", 256),
-                    dropout=cfg["model"].get("dropout", 0.3),
-                    lr=float(cfg["train"].get("lr", 1e-4)),
-                    weight_decay=float(cfg["train"].get("weight_decay", 1e-5)),
-                    lambda_rec=cfg["model"].get("lambda_rec", 1.0),
-                    pretrain_epochs=0,  # ensure no per-fold pretraining
-                    denoise_std=cfg["model"].get("denoise_std", 0.0),
-                    use_focal_loss=cfg["model"].get("use_focal_loss", False),
-                    focal_alpha=cfg["model"].get("focal_alpha", 1.0),
-                    focal_gamma=cfg["model"].get("focal_gamma", 2.0),
-                )
-                if pretrained_state_dict is not None:
-                    missing, unexpected = model.load_state_dict(pretrained_state_dict, strict=False)
-                    if len(missing) > 0 or len(unexpected) > 0:
-                        print(f"[Warning] When loading pretrained weights: missing={len(missing)}, unexpected={len(unexpected)}")
-                    model.freeze_encoders()
-            elif model_name == "self_attn_fusion":
+            if model_name == "self_attn_fusion":
                 model = SelfAttentionFusionModel(
                     input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
                     num_classes=cfg["model"]["num_classes"],
@@ -324,24 +249,13 @@ def main(config_path):
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
-            # Create a fresh early stopping callback for each fold
-            early_stop_callback = create_early_stopping_callback(cfg)
-            log_cfg = cfg.get("logging", {})
-            log_dir = log_cfg.get("log_dir", "lightning_logs")
-            base_name = log_cfg.get("log_name", "experiment")
-            fold_log_name = f"{base_name}_fold_{fold + 1}" if fold is not None else base_name
-            checkpoint_dir = os.path.join(log_dir, fold_log_name, "checkpoints")
-            checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
-            callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+            callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=fold)
             logger = create_logger(cfg, fold=fold)
             trainer = pl.Trainer(
-                max_epochs=cfg["train"]["epochs"],
-                accelerator="auto",
-                devices="auto",
-                log_every_n_steps=10,
+                **create_trainer_kwargs(cfg),
                 callbacks=callbacks,
                 logger=logger,
-                deterministic=True,  # For reproducibility
+                enable_checkpointing=save_checkpoints_from_cfg(cfg),
             )
 
             trainer.fit(model, datamodule=dm)
@@ -382,19 +296,23 @@ def main(config_path):
                 "best_val_acc": best_val_acc,
                 "best_val_f1": best_val_f1,
             })
+            cleanup_fold_resources(trainer, model, dm)
 
         # Aggregate averages across folds and write report
         log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
+        report_dir = report_dir_from_cfg(cfg)
         base_name = log_cfg.get("log_name", "experiment")
-        report_path = os.path.join(log_dir, f"{base_name}_k{n_folds}_report.json")
+        report_path = os.path.join(report_dir, f"{base_name}_k{n_folds}_report.json")
 
         def _avg(key):
-            vals = [fr[key] for fr in fold_results if fr.get(key) is not None and not (isinstance(fr.get(key), float) and (fr.get(key) != fr.get(key)))]
-            # return float(sum(vals) / len(vals)) if len(vals) > 0 else None
-            # return the mean of the values and the standard deviation
-            # f'{mean:.4f} ± {std:.4f}'
-            return f'{np.mean(vals):.4f} ± {np.std(vals):.4f}'
+            vals = [
+                fr[key] for fr in fold_results
+                if fr.get(key) is not None
+                and not (isinstance(fr.get(key), float) and np.isnan(fr.get(key)))
+            ]
+            if not vals:
+                return None
+            return f"{np.mean(vals):.4f} +/- {np.std(vals):.4f}"
 
         averages = {
             "val_loss": _avg("val_loss"),
@@ -403,6 +321,7 @@ def main(config_path):
             "best_val_acc": _avg("best_val_acc"),
             "best_val_f1": _avg("best_val_f1"),
         }
+        averages = {k: v for k, v in averages.items() if v is not None}
 
         report = {
             "n_folds": n_folds,
@@ -410,8 +329,8 @@ def main(config_path):
             "averages": averages,
         }
 
-        os.makedirs(log_dir, exist_ok=True)
-        with open(report_path, "w") as f:
+        os.makedirs(report_dir, exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"Saved k-fold report to: {report_path}")
     else:
@@ -430,48 +349,7 @@ def main(config_path):
         dm.setup(stage="fit")
 
         model_name = cfg.get("model", {}).get("name") or cfg.get("model", {}).get("type")
-        if model_name == "concat_mlp":
-            model = ConcatMLP(
-                input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                num_classes=cfg["model"]["num_classes"],
-                hidden_dim=cfg["model"]["hidden_dim"],
-                dropout=cfg["model"]["dropout"],
-                lr=float(cfg["train"]["lr"]),
-                weight_decay=float(cfg["train"]["weight_decay"]),
-                fusion_hidden=cfg["model"].get("fusion_hidden", 128),
-                use_gated_fusion=cfg["model"].get("use_gated_fusion", True)
-            )
-        elif model_name == "vae_fusion":
-            model = VAEFusionModel(
-                input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                num_classes=cfg["model"]["num_classes"],
-                latent_dim=cfg["model"]["latent_dim"],
-                hidden_dim=cfg["model"]["hidden_dim"],
-                fusion_hidden=cfg["model"]["fusion_hidden"],
-                dropout=cfg["model"]["dropout"],
-                lr=float(cfg["train"]["lr"]),
-                weight_decay=float(cfg["train"]["weight_decay"]),
-                lambda_recon=cfg["model"]["lambda_recon"],
-                lambda_kl=cfg["model"]["lambda_kl"]
-            )
-        elif model_name == "ae_fusion":
-            model = AEFusionModel(
-                input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                num_classes=cfg["model"]["num_classes"],
-                latent_dim=cfg["model"].get("latent_dim", 64),
-                hidden_dim=cfg["model"].get("hidden_dim", 512),
-                fusion_hidden=cfg["model"].get("fusion_hidden", 256),
-                dropout=cfg["model"].get("dropout", 0.3),
-                lr=float(cfg["train"].get("lr", 1e-4)),
-                weight_decay=float(cfg["train"].get("weight_decay", 1e-5)),
-                lambda_rec=cfg["model"].get("lambda_rec", 1.0),
-                pretrain_epochs=cfg["model"].get("pretrain_epochs", 0),
-                denoise_std=cfg["model"].get("denoise_std", 0.0),
-                use_focal_loss=cfg["model"].get("use_focal_loss", False),
-                focal_alpha=cfg["model"].get("focal_alpha", 1.0),
-                focal_gamma=cfg["model"].get("focal_gamma", 2.0),
-            )
-        elif model_name == "self_attn_fusion":
+        if model_name == "self_attn_fusion":
             model = SelfAttentionFusionModel(
                 input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
                 num_classes=cfg["model"]["num_classes"],
@@ -493,22 +371,13 @@ def main(config_path):
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
-        early_stop_callback = create_early_stopping_callback(cfg)
-        log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
-        base_name = log_cfg.get("log_name", "experiment")
-        checkpoint_dir = os.path.join(log_dir, base_name, "checkpoints")
-        checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
-        callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+        callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=None)
         logger = create_logger(cfg, fold=None)
         trainer = pl.Trainer(
-            max_epochs=cfg["train"]["epochs"],
-            accelerator="auto",
-            devices="auto",
-            log_every_n_steps=10,
+            **create_trainer_kwargs(cfg),
             callbacks=callbacks,
             logger=logger,
-            deterministic=True,  # For reproducibility
+            enable_checkpointing=save_checkpoints_from_cfg(cfg),
         )
 
         trainer.fit(model, datamodule=dm)
@@ -542,9 +411,9 @@ def main(config_path):
                 pass
 
         log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
+        report_dir = report_dir_from_cfg(cfg)
         base_name = log_cfg.get("log_name", "experiment")
-        report_path = os.path.join(log_dir, f"{base_name}_report.json")
+        report_path = os.path.join(report_dir, f"{base_name}_report.json")
 
         report = {
             "per_fold": [{
@@ -564,8 +433,8 @@ def main(config_path):
             }
         }
 
-        os.makedirs(log_dir, exist_ok=True)
-        with open(report_path, "w") as f:
+        os.makedirs(report_dir, exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"Saved report to: {report_path}")
 

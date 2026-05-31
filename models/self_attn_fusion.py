@@ -346,13 +346,11 @@ class SelfAttentionFusionModel(BaseLightningModel):
             
             # Apply gated fusion for mRNA if enabled
             if self.use_gated_fusion:
-                print("Using gated fusion for mRNA")
                 latents_dict["mRNA"] = self.gated_fusion_mrna(
                     original=mrna_original,
                     enhanced=mrna_enhanced
                 )
             else:
-                print("Using enhanced mRNA for fusion")
                 latents_dict["mRNA"] = mrna_enhanced
             
             # mRNA -> Proteomics: Proteomics queries attend to mRNA keys/values
