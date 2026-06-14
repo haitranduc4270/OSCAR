@@ -83,9 +83,37 @@ def create_model_checkpoint_callbacks(cfg, dirpath=None):
     
     return callbacks
 
+def report_dir_from_cfg(cfg) -> str:
+    log_cfg = cfg.get("logging", {})
+    return log_cfg.get("report_dir", log_cfg.get("log_dir", "lightning_logs"))
+
+
+def save_checkpoints_from_cfg(cfg) -> bool:
+    return bool(cfg.get("train", {}).get("save_checkpoints", True))
+
+
+def build_trainer_callbacks(cfg, fold=None):
+    early_stop_callback = create_early_stopping_callback(cfg)
+    if not save_checkpoints_from_cfg(cfg):
+        callbacks = [early_stop_callback] if early_stop_callback else []
+        return callbacks, [], early_stop_callback
+
+    log_cfg = cfg.get("logging", {})
+    log_dir = log_cfg.get("log_dir", "lightning_logs")
+    base_name = log_cfg.get("log_name", "experiment")
+    fold_log_name = f"{base_name}_fold_{fold + 1}" if fold is not None else base_name
+    checkpoint_dir = os.path.join(log_dir, fold_log_name, "checkpoints")
+    checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
+    callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+    return callbacks, checkpoint_callbacks, early_stop_callback
+
+
 def create_logger(cfg, fold=None):
     """Create a logger with configurable name and directory."""
     log_config = cfg.get("logging", {})
+    if not log_config.get("enabled", True):
+        return False
+
     log_dir = log_config.get("log_dir", "lightning_logs")
     log_name = log_config.get("log_name", "experiment")
     logger_type = log_config.get("logger_type", "tensorboard")  # "tensorboard" or "csv"
@@ -221,20 +249,13 @@ def main(config_path):
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
-            # Create a fresh early stopping callback for each fold
-            early_stop_callback = create_early_stopping_callback(cfg)
-            log_cfg = cfg.get("logging", {})
-            log_dir = log_cfg.get("log_dir", "lightning_logs")
-            base_name = log_cfg.get("log_name", "experiment")
-            fold_log_name = f"{base_name}_fold_{fold + 1}" if fold is not None else base_name
-            checkpoint_dir = os.path.join(log_dir, fold_log_name, "checkpoints")
-            checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
-            callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+            callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=fold)
             logger = create_logger(cfg, fold=fold)
             trainer = pl.Trainer(
                 **create_trainer_kwargs(cfg),
                 callbacks=callbacks,
                 logger=logger,
+                enable_checkpointing=save_checkpoints_from_cfg(cfg),
             )
 
             trainer.fit(model, datamodule=dm)
@@ -279,15 +300,18 @@ def main(config_path):
 
         # Aggregate averages across folds and write report
         log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
+        report_dir = report_dir_from_cfg(cfg)
         base_name = log_cfg.get("log_name", "experiment")
-        report_path = os.path.join(log_dir, f"{base_name}_k{n_folds}_report.json")
+        report_path = os.path.join(report_dir, f"{base_name}_k{n_folds}_report.json")
 
         def _avg(key):
-            vals = [fr[key] for fr in fold_results if fr.get(key) is not None and not (isinstance(fr.get(key), float) and (fr.get(key) != fr.get(key)))]
-            # return float(sum(vals) / len(vals)) if len(vals) > 0 else None
-            # return the mean of the values and the standard deviation
-            # f'{mean:.4f} ± {std:.4f}'
+            vals = [
+                fr[key] for fr in fold_results
+                if fr.get(key) is not None
+                and not (isinstance(fr.get(key), float) and np.isnan(fr.get(key)))
+            ]
+            if not vals:
+                return None
             return f"{np.mean(vals):.4f} +/- {np.std(vals):.4f}"
 
         averages = {
@@ -297,6 +321,7 @@ def main(config_path):
             "best_val_acc": _avg("best_val_acc"),
             "best_val_f1": _avg("best_val_f1"),
         }
+        averages = {k: v for k, v in averages.items() if v is not None}
 
         report = {
             "n_folds": n_folds,
@@ -304,7 +329,7 @@ def main(config_path):
             "averages": averages,
         }
 
-        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(report_dir, exist_ok=True)
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"Saved k-fold report to: {report_path}")
@@ -346,18 +371,13 @@ def main(config_path):
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
-        early_stop_callback = create_early_stopping_callback(cfg)
-        log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
-        base_name = log_cfg.get("log_name", "experiment")
-        checkpoint_dir = os.path.join(log_dir, base_name, "checkpoints")
-        checkpoint_callbacks = create_model_checkpoint_callbacks(cfg, dirpath=checkpoint_dir)
-        callbacks = checkpoint_callbacks + ([early_stop_callback] if early_stop_callback else [])
+        callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=None)
         logger = create_logger(cfg, fold=None)
         trainer = pl.Trainer(
             **create_trainer_kwargs(cfg),
             callbacks=callbacks,
             logger=logger,
+            enable_checkpointing=save_checkpoints_from_cfg(cfg),
         )
 
         trainer.fit(model, datamodule=dm)
@@ -391,9 +411,9 @@ def main(config_path):
                 pass
 
         log_cfg = cfg.get("logging", {})
-        log_dir = log_cfg.get("log_dir", "lightning_logs")
+        report_dir = report_dir_from_cfg(cfg)
         base_name = log_cfg.get("log_name", "experiment")
-        report_path = os.path.join(log_dir, f"{base_name}_report.json")
+        report_path = os.path.join(report_dir, f"{base_name}_report.json")
 
         report = {
             "per_fold": [{
@@ -413,7 +433,7 @@ def main(config_path):
             }
         }
 
-        os.makedirs(log_dir, exist_ok=True)
+        os.makedirs(report_dir, exist_ok=True)
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"Saved report to: {report_path}")

@@ -6,25 +6,52 @@ This repository trains multi-omics classification models with PyTorch Lightning 
 
 Prerequisites:
 
-- Python 3.12+
+- Python **3.10** (required for pinned `torch==2.5.1+cu121`)
 - [`uv`](https://docs.astral.sh/uv/)
 
 From the project root:
 
 ```bash
-# create/update the virtual environment from pyproject.toml + uv.lock
+# one-time: let uv install Python 3.10 if needed
+uv python install 3.10
+
+# create .venv and install deps from pyproject.toml + uv.lock
 uv sync
 ```
 
-Verify Python is available:
+Verify:
 
 ```bash
-python -V
+uv run python -V          # should print 3.10.x
+uv run python -c "import torch; print(torch.__version__)"
 ```
+
+Run training without activating the venv:
+
+```bash
+uv run python -m train --config configs/config_self_attn_cross_attn.yaml
+```
+
+Or activate the venv (optional):
+
+```powershell
+# Windows PowerShell
+.venv\Scripts\activate
+python -m train --config configs/config_self_attn_cross_attn.yaml
+```
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+python -m train --config configs/config_self_attn_cross_attn.yaml
+```
+
+> **Note:** Do not use Python 3.12+ for this project — PyTorch 2.5.1+cu121 has no wheel there.
+> Legacy `pip` install is still documented in `requirements.txt` + `requirements-torch-cu121.txt`.
 
 ## 2) Download dataset
 
-1. Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-dataset).
+1. Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-data).
 2. Extract it so processed CSVs live under the repo root, for example:
 
 ```text

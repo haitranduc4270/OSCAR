@@ -62,3 +62,6 @@ attention_plots/
 
 # Other
 csv/*
+
+experiments/*
+scripts/*
