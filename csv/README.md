@@ -1,4 +1,4 @@
-1. Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-data).
+1. Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-dataset).
 2. Extract it so processed CSVs live under the repo root, for example:
 
 ```text

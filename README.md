@@ -1,102 +1,51 @@
 # Cancer Multi-Omics Experiment
 
-This repository trains multi-omics classification models with PyTorch Lightning and includes utilities to visualize gradient-based attention / feature importance.
+Train multi-omics classification models (self-attention + cross-attention fusion) with PyTorch Lightning.
 
-## 1) Set up environment with `uv`
+## Setup
 
-Prerequisites:
-
-- Python **3.10** (required for pinned `torch==2.5.1+cu121`)
-- [`uv`](https://docs.astral.sh/uv/)
-
-From the project root:
+Prerequisites: Python **3.10**, [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-# one-time: let uv install Python 3.10 if needed
 uv python install 3.10
-
-# create .venv and install deps from pyproject.toml + uv.lock
 uv sync
 ```
 
-Verify:
+## Dataset
 
-```bash
-uv run python -V          # should print 3.10.x
-uv run python -c "import torch; print(torch.__version__)"
-```
+Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-dataset).
 
-Run training without activating the venv:
-
-```bash
-uv run python -m train --config configs/config_self_attn_cross_attn.yaml
-```
-
-Or activate the venv (optional):
-
-```powershell
-# Windows PowerShell
-.venv\Scripts\activate
-python -m train --config configs/config_self_attn_cross_attn.yaml
-```
-
-```bash
-# Linux / macOS
-source .venv/bin/activate
-python -m train --config configs/config_self_attn_cross_attn.yaml
-```
-
-> **Note:** Do not use Python 3.12+ for this project — PyTorch 2.5.1+cu121 has no wheel there.
-> Legacy `pip` install is still documented in `requirements.txt` + `requirements-torch-cu121.txt`.
-
-## 2) Download dataset
-
-1. Download the OSCAR dataset from Kaggle: [oscar-dataset](https://www.kaggle.com/datasets/hitrnc/oscar-data).
-2. Extract it so processed CSVs live under the repo root, for example:
+Extract so pre-split folds live under the repo root:
 
 ```text
 OSCAR/csv/processed/
-  LUNG/
-    5-fold/
-      fold_1/ ...
-      fold_5/ ...
-  BRCA/
-    ...
-  COADREAD/
-    ...
+  BRCA/5-fold/fold_1/ ...
+  COADREAD/5-fold/fold_1/ ...
+  LUNG/5-fold/fold_1/ ...
 ```
 
-Pre-generated 5-fold splits are included under each cohort’s `5-fold/` directory. Point `data.pre_split_base` in the config at the matching folder (see below).
+Update `data.*_path` and `data.y_path` in each config if your CSVs are elsewhere.
 
-## 3) Run training
-
-Edit `configs/config_self_attn_cross_attn.yaml` before training:
-
-- **`data.*_path`** and **`data.y_path`**: absolute or relative paths to the omics and label CSVs for the cohort you want.
-- **`data.pre_split_base`**: e.g. `csv/processed/BRCA/5-fold`, `csv/processed/LUNG/5-fold`, or `csv/processed/COADREAD/5-fold`.
-- **`model.input_dims`**: feature counts per omic (must match the CSV row counts):
-
-| Cohort   | Proteomics | CNV   | mRNA  |
-|----------|------------|-------|-------|
-| BRCA     | 223        | 19273 | 19580 |
-| COADREAD | 153        | 24776 | 20530 |
-| LUNG     | 180        | 24776 | 20530 |
-
-- **`logging.log_name`**: optional run name (fold suffixes are added automatically during k-fold training).
-
-Training entrypoint:
+## Training
 
 ```bash
-python -m train --config configs/config_self_attn_cross_attn.yaml
+uv run python -m train --config configs/config_self_attn_cross_attn_brca.yaml
+uv run python -m train --config configs/config_self_attn_cross_attn_crc.yaml
+uv run python -m train --config configs/config_self_attn_cross_attn_lung.yaml
 ```
 
-Notes:
+Checkpoints and k-fold reports are written under `lightning_logs/` (`{log_name}_fold_{k}/checkpoints/`, `{log_name}_k5_report.json`).
 
-- Configs live in `configs/` (default experiment: `config_self_attn_cross_attn.yaml`).
-- Logs and checkpoints are written under `lightning_logs/` (see `logging.log_dir` and `logging.log_name` in the config).
-- Stratified 5-fold training is enabled when `data.use_stratified_kfold: true` and `data.pre_split_base` is set.
+Reproducibility: each fold re-seeds with `seed + fold_index`; set `train.num_workers: 0` to avoid DataLoader worker randomness.
 
-## 4) Visualize attention (gradient feature importance)
+| Cohort   | Config | Classes |
+|----------|--------|---------|
+| BRCA     | `config_self_attn_cross_attn_brca.yaml` | 4 |
+| COADREAD | `config_self_attn_cross_attn_crc.yaml`   | 4 |
+| LUNG     | `config_self_attn_cross_attn_lung.yaml`  | 2 |
+
+
+## Visualize attention (gradient feature importance)
 
 Use the same config as training and a checkpoint from `lightning_logs/.../checkpoints/`.
 
