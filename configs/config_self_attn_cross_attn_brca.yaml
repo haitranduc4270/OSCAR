@@ -1,0 +1,50 @@
+data:
+  x_rna_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_mRNA.csv
+  x_cnv_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_CNV_1_channel.csv
+  x_proteomics_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_proteomics.csv
+  y_path: C:\Users\haitr\Documents\DL\cancer-multi-omics-experiment\csv\processed\BRCA\BRCA_label_num.csv
+  pre_split_base: csv/processed/BRCA/5-fold
+  val_split: 0.2
+  use_stratified_kfold: true
+  n_folds: 5
+
+model:
+  name: self_attn_fusion
+  input_dims: null
+  num_classes: 4
+  latent_dim: 128
+  hidden_dim: 512
+  fusion_hidden: 128
+  dropout: 0.4
+  n_heads: 8
+  n_layers: 2
+  fusion_type: attention
+  use_cross_attention: true
+  use_gated_fusion: true
+  cross_attn_hidden: 128
+  use_original_for_proteomics: true
+  gated_fusion_hidden: 256
+
+train:
+  epochs: 200
+  lr: 2e-4
+  weight_decay: 1e-5
+  batch_size: 32
+  num_workers: 0
+  seed: 42
+  normalize: true
+  deterministic: false
+  precision: 16-mixed
+  save_last_checkpoint: false
+  save_weights_only: true
+  early_stopping:
+    enable: true
+    patience: 15
+    min_delta: 0.001
+  save_checkpoints: true
+
+logging:
+  enabled: false
+  log_dir: lightning_logs
+  log_name: brca
+  logger_type: tensorboard

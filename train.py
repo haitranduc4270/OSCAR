@@ -1,5 +1,5 @@
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, Callback
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from datamodule import BRCADataModule
 from models.self_attn_fusion import SelfAttentionFusionModel
@@ -11,6 +11,29 @@ import gc
 import torch
 import numpy as np
 import random
+
+
+class ValAccAtBestF1Callback(Callback):
+    """Track val_acc at the epoch where val_f1 reaches its peak."""
+
+    def __init__(self):
+        self.best_val_f1 = None
+        self.val_acc_at_best_f1 = None
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        metrics = trainer.callback_metrics
+        val_f1 = metrics.get("val_f1")
+        if val_f1 is None:
+            return
+        f1 = float(val_f1.item() if hasattr(val_f1, "item") else val_f1)
+        if self.best_val_f1 is None or f1 > self.best_val_f1:
+            self.best_val_f1 = f1
+            val_acc = metrics.get("val_acc")
+            if val_acc is not None:
+                self.val_acc_at_best_f1 = float(
+                    val_acc.item() if hasattr(val_acc, "item") else val_acc
+                )
+
 
 def create_early_stopping_callback(cfg):
     """Create a fresh early stopping callback from config."""
@@ -206,7 +229,11 @@ def main(config_path):
             print(f"\n{'='*50}")
             print(f"Fold {fold + 1}/{n_folds}")
             print(f"{'='*50}")
-            
+
+            fold_seed = seed + fold
+            set_seed(fold_seed)
+            print(f"Set fold seed to: {fold_seed}")
+
             pre_fold_dir = resolve_pre_split_fold_dir(cfg["data"], fold)
             dm = BRCADataModule(
                 omics_config=extract_omics_config(cfg["data"]),
@@ -214,7 +241,7 @@ def main(config_path):
                 batch_size=cfg["train"]["batch_size"],
                 num_workers=cfg["train"]["num_workers"],
                 val_split=cfg["data"]["val_split"],
-                seed=cfg["train"]["seed"],
+                seed=fold_seed,
                 normalize=cfg["train"]["normalize"],
                 use_stratified_kfold=pre_fold_dir is None,
                 n_folds=n_folds,
@@ -249,7 +276,9 @@ def main(config_path):
             else:
                 raise ValueError(f"Unknown model: {model_name}")
 
+            val_acc_at_best_f1_cb = ValAccAtBestF1Callback()
             callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=fold)
+            callbacks = [val_acc_at_best_f1_cb] + list(callbacks)
             logger = create_logger(cfg, fold=fold)
             trainer = pl.Trainer(
                 **create_trainer_kwargs(cfg),
@@ -290,11 +319,8 @@ def main(config_path):
 
             fold_results.append({
                 "fold": fold + 1,
-                "val_loss": float(val_metrics.get("val_loss", float("nan"))),
-                "val_acc": float(val_metrics.get("val_acc", float("nan"))),
-                "val_f1": float(val_metrics.get("val_f1", float("nan"))),
-                "best_val_acc": best_val_acc,
-                "best_val_f1": best_val_f1,
+                "f1_score": best_val_f1,
+                "accuracy": val_acc_at_best_f1_cb.val_acc_at_best_f1,
             })
             cleanup_fold_resources(trainer, model, dm)
 
@@ -315,11 +341,8 @@ def main(config_path):
             return f"{np.mean(vals):.4f} +/- {np.std(vals):.4f}"
 
         averages = {
-            "val_loss": _avg("val_loss"),
-            "val_acc": _avg("val_acc"),
-            "val_f1": _avg("val_f1"),
-            "best_val_acc": _avg("best_val_acc"),
-            "best_val_f1": _avg("best_val_f1"),
+            "f1_score": _avg("f1_score"),
+            "accuracy": _avg("accuracy"),
         }
         averages = {k: v for k, v in averages.items() if v is not None}
 
@@ -371,7 +394,9 @@ def main(config_path):
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
+        val_acc_at_best_f1_cb = ValAccAtBestF1Callback()
         callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=None)
+        callbacks = [val_acc_at_best_f1_cb] + list(callbacks)
         logger = create_logger(cfg, fold=None)
         trainer = pl.Trainer(
             **create_trainer_kwargs(cfg),
@@ -418,18 +443,12 @@ def main(config_path):
         report = {
             "per_fold": [{
                 "fold": 1,
-                "val_loss": float(val_metrics.get("val_loss", float("nan"))),
-                "val_acc": float(val_metrics.get("val_acc", float("nan"))),
-                "val_f1": float(val_metrics.get("val_f1", float("nan"))),
-                "best_val_acc": best_val_acc,
-                "best_val_f1": best_val_f1,
+                "f1_score": best_val_f1,
+                "accuracy": val_acc_at_best_f1_cb.val_acc_at_best_f1,
             }],
             "averages": {
-                "val_loss": float(val_metrics.get("val_loss", float("nan"))),
-                "val_acc": float(val_metrics.get("val_acc", float("nan"))),
-                "val_f1": float(val_metrics.get("val_f1", float("nan"))),
-                "best_val_acc": best_val_acc,
-                "best_val_f1": best_val_f1,
+                "f1_score": best_val_f1,
+                "accuracy": val_acc_at_best_f1_cb.val_acc_at_best_f1,
             }
         }
 

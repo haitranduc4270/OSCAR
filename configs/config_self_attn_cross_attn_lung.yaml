@@ -7,9 +7,7 @@ data:
   val_split: 0.2
   use_stratified_kfold: true
   n_folds: 5
-  # For visualize_attention.py when using pre_split_base
-  current_fold: 0
-  
+
 model:
   name: self_attn_fusion
   input_dims: null
@@ -24,32 +22,29 @@ model:
   use_cross_attention: true
   use_gated_fusion: true
   cross_attn_hidden: 128
-  use_original_for_proteomics: true
+  use_original_for_proteomics: false
   gated_fusion_hidden: 256
+
 train:
   epochs: 200
   lr: 2e-4
   weight_decay: 1e-5
   batch_size: 32
-  num_workers: 4
+  num_workers: 0
   seed: 42
   normalize: true
   deterministic: false
   precision: 16-mixed
-  pretrain_all:
-    enable: false
-    epochs: 0
-    val_split: 0.0
   save_last_checkpoint: false
   save_weights_only: true
   early_stopping:
     enable: true
     patience: 15
     min_delta: 0.001
-  save_checkpoints: false
+  save_checkpoints: true
 
 logging:
   enabled: false
   log_dir: lightning_logs
-  log_name: lung_self_attn_cross_attn_mrna_cnv_prot_mogcn_data
+  log_name: lung
   logger_type: tensorboard
