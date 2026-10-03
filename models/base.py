@@ -5,17 +5,30 @@ from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
 
 
 class BaseLightningModel(pl.LightningModule):
-    def __init__(self, num_classes, lr=1e-4, weight_decay=1e-5):
+    def __init__(
+        self,
+        num_classes,
+        lr=1e-4,
+        weight_decay=1e-5,
+        loss_type="ce",
+        class_weights=None,
+        optimizer_type="adamw",
+        **kwargs,
+    ):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["class_weights"])
         self.num_classes = num_classes
         self.lr = lr
         self.weight_decay = weight_decay
+        self.loss_type = loss_type
+        self.optimizer_type = optimizer_type
 
         # Metrics
         self.train_acc = MulticlassAccuracy(num_classes)
         self.val_acc = MulticlassAccuracy(num_classes)
         self.val_f1 = MulticlassF1Score(num_classes, average='macro')
+        self.test_acc = MulticlassAccuracy(num_classes)
+        self.test_f1 = MulticlassF1Score(num_classes, average='macro')
 
     def forward(self, batch):
         raise NotImplementedError("Must be implemented in subclass")

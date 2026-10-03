@@ -1,0 +1,61 @@
+\subsubsection{Interpretability and Biomarker Discovery}
+
+To move beyond a purely predictive ``black box,'' we quantified feature importance with input-gradient saliency.
+For each validation fold we computed the mean absolute gradient of the true-class logit with respect to each omic input feature,
+$\mathrm{Mean}\,|\partial\mathrm{logit}/\partial x|$, under $\mathtt{eval}$ mode.
+Features that repeatedly entered the per-omic top-$k$ list in at least three of five folds were retained as
+\emph{consensus} candidates and subsequently filtered by one-versus-rest differential abundance
+(Mann--Whitney $U$, Benjamini--Hochberg FDR, Cohen's $d$).
+Gene-set over-representation (Enrichr: GO Biological Process, KEGG, MSigDB Hallmark) was used to assess pathway coherence
+of the retained lists.
+
+\begin{figure*}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{attention_plots/biomarker_step1_consensus/hbar_consensus_all_subtypes.png}
+    \caption{Five-fold consensus gradient biomarkers across BRCA subtypes (horizontal bars; color = omic; labels show fold recurrence).
+    Panel order: \textbf{(A)} Luminal~A, \textbf{(B)} Luminal~B, \textbf{(C)} Basal-like, \textbf{(D)} HER2-enriched.
+    Top-12 per subtype by mean absolute gradient; panel-specific \emph{x}-scales.
+    Luminal panels emphasize mitotic / cell-cycle programs~\cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Malorni2016RBsig}.
+    HER2-enriched recovers the 17q12 amplicon~\cite{Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon};
+    Basal-like consensus is more heterogeneous.}
+    \label{fig:combined_saliency}
+\end{figure*}
+
+\paragraph{Recovery of established subtype programs.}
+As summarized in Fig.~\ref{fig:combined_saliency}, OSCAR focuses on biologically recognized programs
+\emph{without} injecting curated biomarker priors into training:
+
+\begin{itemize}
+    \item \textit{Luminal A and B.}
+    Consensus features are enriched for mitotic apparatus and cell-cycle genes
+    (e.g.\ \textit{ASPM}, \textit{CEP55}, \textit{CENPE}, \textit{NUF2}, \textit{DLGAP5}, \textit{CDKN3}, \textit{KIF11},
+    \textit{GTSE1}, \textit{SGO1}), in line with proliferation-oriented distinctions among luminal tumors
+    \cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Althobiti2024ASPM}.
+    Hallmark over-representation further supports this reading, with significant enrichment for
+    \textbf{E2F Targets}, \textbf{G2--M Checkpoint}, and \textbf{Mitotic Spindle}
+    \cite{Malorni2016RBsig,Liberzon2015Hallmark}.
+    Differential abundance clarifies polarity: mitotic transcripts are systematically \emph{lower} in Luminal~A versus
+    the remainder and comparatively \emph{higher} in Luminal~B, matching the more proliferative luminal phenotype
+    \cite{Ades2014LuminalB}.
+
+    \item \textit{HER2-enriched.}
+    Consensus features are dominated by the 17q12/\textit{ERBB2} amplicon neighborhood at both CNV and mRNA levels
+    (e.g.\ \textit{STARD3}, \textit{TCAP}, \textit{MIEN1}, \textit{GRB7}, \textit{PGAP3}, \textit{PNMT}, \textit{CDK12}, \textit{GSDMB}),
+    consistent with genomic characterization of HER2-positive disease
+    \cite{Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon}.
+
+    \item \textit{Basal-like.}
+    The basal panel is more mixed (e.g.\ \textit{MIA}, \textit{PGAP3}, GATA3 / phospho-TUBERIN proteomics),
+    consistent with basal-like heterogeneity~\cite{Koboldt2012BRCA}, and is treated as hypothesis-generating.
+\end{itemize}
+
+\paragraph{Model-nominated candidates beyond textbook markers.}
+\begin{itemize}
+    \item \textit{TBC1D31} --- luminal A/B contrast; trafficking / metabolic context~\cite{Arora2024TBC1D,Senatore2021TBC1D31}.
+    \item \textit{GAS2L3} --- Luminal~A-low cytokinesis gene under DREAM/E2F control~\cite{Wolter2012GAS2L3,Peer2013GAS2L3}.
+\end{itemize}
+
+\paragraph{Take-home.}
+Known-program recovery supports interpretability; \textit{TBC1D31} and \textit{GAS2L3} are
+hypothesis-generating candidates rather than claimed clinical biomarkers
+\cite{Arora2024TBC1D,Wolter2012GAS2L3,PerezPena2017MitoticLumA,Staaf2010HER2,Gao2018LuminalA,Ades2014LuminalB}.
