@@ -1,61 +1,1018 @@
-\subsubsection{Interpretability and Biomarker Discovery}
+\documentclass[lettersize,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{cite}
+\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+% updated with editorial comments 8/9/2021
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{booktabs}
 
-To move beyond a purely predictive ``black box,'' we quantified feature importance with input-gradient saliency.
-For each validation fold we computed the mean absolute gradient of the true-class logit with respect to each omic input feature,
-$\mathrm{Mean}\,|\partial\mathrm{logit}/\partial x|$, under $\mathtt{eval}$ mode.
-Features that repeatedly entered the per-omic top-$k$ list in at least three of five folds were retained as
-\emph{consensus} candidates and subsequently filtered by one-versus-rest differential abundance
-(Mann--Whitney $U$, Benjamini--Hochberg FDR, Cohen's $d$).
-Gene-set over-representation (Enrichr: GO Biological Process, KEGG, MSigDB Hallmark) was used to assess pathway coherence
-of the retained lists.
+\begin{document}
+
+\title{Order-aware Self-Cross Attention Representation Learning for Multi-omic Cancer Subtype Classification}
+
+% \author{Tuan Duc Nguyen$^\dagger$, 
+%         Hai Duc Tran$^\dagger$, 
+%         and Duc-Hau Le$^*$%
+% \thanks{$^\dagger$Tuan Duc Nguyen and Hai Duc Tran contributed equally to this work.}%
+% \thanks{$^*$Corresponding author: \href{mailto:hauld@soict.hust.edu.vn}{hauld@soict.hust.edu.vn}}%
+% \thanks{The authors are with the School of Information and Communications Technology, Hanoi University of Science and Technology, 1 Dai Co Viet, Bach Mai, Hanoi 100000, Vietnam.}}
+
+
+\author{Tuan Duc Nguyen$^\dagger$, 
+        Hai Duc Tran$^\dagger$, 
+        and Duc-Hau Le$^*$%
+\thanks{$^\dagger$Tuan Duc Nguyen and Hai Duc Tran contributed equally to this work.}% <-this % stops a space
+\thanks{$^*$Corresponding author: \href{mailto:hauld@soict.hust.edu.vn}{hauld@soict.hust.edu.vn}}%
+\thanks{The authors are with the School of Information and Communications Technology, Hanoi University of Science and Technology, 1 Dai Co Viet, Bach Mai, Hanoi 100000, Vietnam.}}
+
+
+% The paper headers
+\markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2021}%
+{Shell \MakeLowercase{\textit{et al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
+
+% \IEEEpubid{0000--0000/00\$00.00~\copyright~2021 IEEE}
+% Remember, if you use this you must call \IEEEpubidadjcol in the second
+% column for its text to clear the IEEEpubid mark.  
+
+\maketitle
+
+\begin{abstract}
+The precise classification of cancer subtypes is a cornerstone of precision oncology, yet the integration of heterogeneous multi-omic data remains a significant computational challenge. Existing deep learning frameworks often utilize symmetric fusion strategies that treat omic modalities as independent, parallel inputs, thereby overlooking the directional regulatory dependencies inherent in biological systems. We propose \textbf{OSCAR} (\textbf{O}rder-aware \textbf{S}elf-\textbf{C}ross \textbf{A}ttention \textbf{R}epresentation), a novel hierarchical deep learning framework that explicitly incorporates the biological ``Central Dogma'' flow: $\text{Genomics} \rightarrow \text{Transcriptomics} \rightarrow \text{Proteomics}$. Each modality is encoded by an MLP into a shared latent. Ordered cross-attention uses the mRNA latent as the query for the CNV latent and the proteomic latent as the query for the mRNA latent. Gated fusion combines each updated latent with the encoder latent of the same modality, after which self-attention is applied to the three omic tokens. On BRCA the gate values remain approximately $0.5$, and the classifier therefore receives both latents. We evaluated OSCAR on three benchmark cohorts from The Cancer Genome Atlas (TCGA): breast invasive carcinoma (BRCA), lung cancer (LUNG), and colorectal adenocarcinoma (COADREAD). Our model achieves state-of-the-art performance, reaching an accuracy of \textbf{91.27\%} in the high-heterogeneity BRCA dataset and \textbf{96.71\%} in LUNG subtype classification, outperforming established graph-based and symmetric attention baselines. Furthermore, five-fold consensus input-gradient saliency on BRCA, checked against differential abundance and pathway enrichment, is consistent with known luminal mitotic programs and the 17q12/\textit{ERBB2} amplicon. \textit{TBC1D31} and \textit{GAS2L3} are additional high-ranking features and are reported as unconfirmed nominations. These gradients rank input features of the trained classifier. They do not establish directional regulation, causal cross-omic effects, or new clinical biomarkers. The classification gains are evaluated separately, through the cohort comparison and the order ablation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multi-omic integration, Cancer subtype classification, Ordered cross-attention, Central Dogma, Gated fusion, Precision oncology.
+\end{IEEEkeywords}
+
+% \section{Introduction}
+% \IEEEPARstart{T}{his} file is intended to serve as a ``sample article file''
+% for IEEE journal papers produced under \LaTeX\ using
+% IEEEtran.cls version 1.8b and later. The most common elements are covered in the simplified and updated instructions in ``New\_IEEEtran\_how-to.pdf''. For less common elements you can refer back to the original ``IEEEtran\_HOWTO.pdf''. It is assumed that the reader has a basic working knowledge of \LaTeX. Those who are new to \LaTeX \ are encouraged to read Tobias Oetiker's ``The Not So Short Introduction to \LaTeX ,'' available at: \url{http://tug.ctan.org/info/lshort/english/lshort.pdf} which provides an overview of working with \LaTeX.
+
+\section{Introduction}
+\label{sec:introduction}
+\IEEEPARstart{T}{he} TCGA Pan-Cancer analyses have established molecular cancer classification as a central component of precision oncology, supporting prognosis, treatment stratification, and biomarker discovery, as framed by The Cancer Genome Atlas (TCGA) \cite{TCGA2013} and the Pan-Cancer Atlas \cite{Hoadley2018PanCancer}. Cancer is inherently heterogeneous; tumors arising in the same organ can follow markedly different clinical trajectories because they are driven by distinct molecular programs. Although histopathology remains clinically important, high-throughput profiling has shifted subtype discovery toward molecular signatures derived from genomics, transcriptomics, epigenomics, and proteomics. Large-scale TCGA studies of breast, lung, and colorectal tumors have shown that molecular subtypes often refine or complement tissue-level diagnosis, including TCGA breast characterization \cite{Koboldt2012BRCA}, LUAD \cite{TCGA2014LUAD}, LUSC \cite{TCGA2012LUSC}, and COADREAD \cite{TCGA2012COADREAD}. 
+
+Recent reviews \cite{Cai2022Review, CarrilloPerez2022, Abdelaziz2024Review, Han2025Review} have emphasized that multi-omic integration is now central to cancer research because single-omic views rarely capture the layered regulatory mechanisms that connect genotype to phenotype. Integrating complementary modalities such as Copy Number Variations (CNV), messenger RNA (mRNA), and Reverse Phase Protein Array (RPPA) is therefore essential for a more faithful representation of oncogenic processes and subtype-specific biology \cite{CrossAttOmics2024, Omran2025}. 
+
+Over the past decade, the computational strategies for multi-omic fusion have evolved through distinct technological paradigms. Early methodologies primarily relied on matrix factorization and joint statistical modeling—such as iCluster \cite{iCluster2009}, integrative NMF \cite{IntNMF2017}, and JIVE \cite{JIVE2013}—or simple feature concatenation extended by deep networks like OmiEmbed \cite{OmiEmbed2021} and DeepMO \cite{DeepMO2020}. While providing a rigorous statistical foundation, these early methods frequently struggle with non-linear cross-modal dependencies and are highly vulnerable to scale mismatches and noise propagation. To capture cross-omic structure, later models adopted graph-based architectures; models like MOGONET \cite{MOGONET2021}, MoGCN \cite{MoGCN2022}, DeepMoIC \cite{DeepMoIC2024}, and $M^2$CGCN \cite{M2CGCN2025} leverage patient similarity networks or feature graphs to refine inter-omic correlations. Concurrently, the success of Transformers inspired attention-based frameworks—including moBRCA-net \cite{moBRCAnat2023}, CrossAttOmics \cite{CrossAttOmics2024}, MoxGATE \cite{MoxGATE2023}, and the Multi-Omics Transformer (MOT) \cite{MOT2023}—which utilize symmetric cross-attention or gated mechanics to adaptively align heterogeneous features, while generative or pathway-guided networks \cite{SubtypeGAN2020, SurvPath2023} attempted to constrain these latent representations using biological priors.
+
+Despite substantial methodological progress, a key conceptual limitation persists across these modern paradigms. Most existing models, whether graph-based, attention-driven, or generative, still treat multi-omic modalities as symmetric or parallel inputs. This ``flat" fusion assumption overlooks the directional regulatory logic summarized by the Central Dogma, in which genomic alterations influence transcript abundance and transcripts subsequently shape protein-level outcomes. In practice, CNVs, mRNA expression, and RPPA measurements are not merely correlated feature blocks; they are connected by sequential dependencies. Consequently, even state-of-the-art (SOTA) methods may miss subtype-discriminative signals that depend on cross-layer ordering rather than on undirected statistical similarity alone. Furthermore, this limitation propagates into model explainability. Traditional post-hoc tools (e.g., SHAP, LIME) or modern symmetric attention weights \cite{moBRCAnat2023, OmiEmbed2021} evaluate features either in isolation or as undirected correlations, failing to capture the directional, cascading nature of cross-omic interactions.
+
+To address this gap, we propose OSCAR (Order-aware Self-Cross Attention Representation), a deep learning architecture that explicitly incorporates biological hierarchy through an Ordered Cross-Attention (OCA) mechanism. Unlike recent integration models that treat modalities as parallel inputs, OSCAR introduces a directional inductive bias aligned with the regulatory flow from CNV to mRNA to RPPA. Each modality is first compressed by an MLP. Ordered cross-attention then updates the mRNA latent from the CNV latent and the proteomic latent from the mRNA latent. Self-attention is then applied to the resulting omic tokens. This design grounds the interaction in a biologically plausible sequence that directly motivates the present study.
+
+\begin{figure*}[!t]
+    \centering
+    \includegraphics[width=1\textwidth]{model.pdf}
+    \caption{\textbf{Proposed OSCAR Architecture.} Each omic is encoded by an MLP. The mRNA latent queries the CNV latent and the proteomic latent queries the mRNA latent; gated fusion mixes each update with the encoder latent; self-attention is applied to the omic tokens.}
+    \label{fig:model}
+\end{figure*}
+
+A gated fusion then mixes each cross-attention update with the encoder latent of the same modality. The primary contributions of this work are three-fold:
+\begin{enumerate}
+\item We propose OSCAR, an order-aware self-cross attention framework for multi-omic fusion that follows the directional flow of biological information.
+\item We demonstrate that our model achieves better performance across three diverse TCGA cohorts: breast invasive carcinoma (BRCA), lung cancer (LUAD/LUSC, collectively denoted as LUNG), and colorectal adenocarcinoma (COAD/READ, denoted as COADREAD), particularly in resolving high-heterogeneity subtypes.
+\item We report a BRCA input-gradient analysis with cross-fold consensus, differential abundance filtering, and pathway enrichment, used as a consistency check against known luminal and HER2 programs.
+\end{enumerate}
+
+
+
+% 
+
+
+
+\section{Materials and Methods}
+
+\subsection{Data Preparation}
+We evaluated OSCAR on three TCGA multi-omic cohorts: breast invasive carcinoma (BRCA), lung cancer (LUNG)---comprising lung adenocarcinoma (LUAD) and lung squamous cell carcinoma (LUSC)---and colorectal adenocarcinoma (COADREAD). Each cohort includes matched genomic copy number variation (CNV), transcriptomic mRNA expression, proteomic reverse phase protein array (RPPA), and clinical subtype annotations. These cohorts were selected because their molecular landscapes and subtype definitions have been extensively characterized by the TCGA consortium, including benchmark studies on BRCA \cite{Koboldt2012BRCA}, LUAD \cite{TCGA2014LUAD}, LUSC \cite{TCGA2012LUSC}, and COADREAD \cite{TCGA2012COADREAD}. Molecular and clinical data were obtained from the UCSC Xena platform \cite{Goldman2020Xena}, with proteomic profiles supplemented from The Cancer Proteome Atlas (TCPA) \cite{Li2013TCPA}.
+
+During preprocessing, we retained only patients shared across CNV, mRNA, RPPA, and clinical metadata to ensure complete multi-omic alignment. Samples without subtype labels and features containing missing values were removed. The resulting cohorts are a high-dimensional, small-sample classification setting, with 39,076 to 45,486 molecular features and fewer than 700 aligned patients per dataset, as summarized together with the subtype distributions in Table \ref{tab:dataset_summary}. 
+
+\begin{table*}[htbp]
+\centering
+\caption{Summary of experimental datasets, multi-omic feature dimensions, and subtype distributions.}
+\label{tab:dataset_summary}
+\small
+\begin{tabular}{@{}lccrX@{}}
+\toprule
+\textbf{Dataset} & \textbf{Modality} & \textbf{Features ($D$)} & \textbf{Subtype distribution} \\ 
+\midrule
+\textbf{LUNG} (N=682) & mRNA & 20,530 & LUAD: 359 (52.6\%) \\
+ &  CNV & 24,776 & LUSC: 323 (47.4\%) \\
+ &  RPPA & 180 &  \\ 
+\midrule
+% \textbf{BRCA} (N=511) & mRNA & 20,530 & Luminal A: 248 (49.0\%) \\
+%  & CNV & 24,776 & Luminal B: 98 (24.4\%) \\
+%  & RPPA & 168 &  Basal-like: 112 (17.4\%) \\ 
+
+%  &  &  & HER2-enriched: 53 (9.1\%) \\ 
+% %  &  &  & Normal-like: 16 (2.3\%) \\ 
+
+\textbf{BRCA} (N=511) & mRNA & 19,580 & Luminal A: 248 (48.5\%) \\
+ & CNV & 19,273 & Luminal B: 98 (19.2\%) \\
+ & RPPA & 223 & Basal-like: 112 (21.9\%) \\
+ & & & HER2-enriched: 53 (10.4\%) \\
+ 
+\midrule
+\textbf{COADREAD} (N=222) & mRNA & 20,530 & CMS2: 86 (38.7\%)\\
+ & CNV & 24,776 & CMS4: 69 (31.1\%)\\
+ & RPPA & 153 & CMS3: 34 (15.3\%) \\ 
+ &  &  & CMS1: 33 (14.9\%) \\ 
+
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Problem Formulation}
+Let the input space be defined by three distinct omic modalities from the same patient: genomic data (CNV) $X_{G} \in \mathbb{R}^{d_G}$, transcriptomic data (mRNA) $X_{T} \in \mathbb{R}^{d_T}$, and proteomic data (RPPA) $X_{P} \in \mathbb{R}^{d_P}$. Given a training set of $N$ samples, our goal is to learn a mapping $f: \{X_G, X_T, X_P\} \rightarrow \mathcal{Y}$, where $\mathcal{Y}$ corresponds to the ground-truth cancer subtype labels.
+
+\subsection{Per-omic Encoding}
+Each modality is mapped to a shared latent of dimension $d=128$ by a ReLU MLP with a 512-unit hidden layer,
+\begin{equation}
+    Z_i = \mathrm{MLP}(X_i), \qquad i \in \{G, T, P\}.
+\end{equation}
+$Z_G$, $Z_T$, and $Z_P$ are single vectors per patient. No attention is applied inside a modality, so the encoder does not model gene--gene interactions.
+
+\subsection{Ordered Cross-Attention (OCA)}
+The defining step of OSCAR is an ordered update of these vectors. Unlike symmetric fusion models such as MoGCN \cite{MoGCN2022} or MoxGATE \cite{MoxGATE2023}, the update follows the Central Dogma direction, and it is an element-wise gate on the latent rather than a softmax over genes.
+
+The mRNA latent is the query and the CNV latent supplies key and value. With layer-normalized projections $Q_T$, $K_G$, and $V_G$,
+\begin{equation}
+    g_{T} = \sigma\!\left(W_{T}[Q_T \parallel K_G]\right), \qquad
+    H_T = Q_T + g_{T} \odot V_G.
+\end{equation}
+A residual feed-forward block is then applied to $H_T$. The proteomic latent queries the mRNA latent in the same form,
+\begin{equation}
+    g_{P} = \sigma\!\left(W_{P}[Q_P \parallel K_T]\right), \qquad
+    H_P = Q_P + g_{P} \odot V_T.
+\end{equation}
+In the BRCA configuration, $K_T$ and $V_T$ are taken from the encoder mRNA latent $Z_T$. LUNG and COADREAD use the mRNA latent after the CNV update. The CNV latent $Z_G$ is not rewritten by either step.
+
+\subsection{Gated Fusion}
+For mRNA and proteomics, a second gate mixes the cross-attention update with the encoder latent:
+\begin{equation}
+    \alpha_i = \sigma\!\left(W_g[Z_i \parallel H_i]\right), \qquad
+    F_i = \alpha_i \odot H_i + (1-\alpha_i) \odot Z_i,
+\end{equation}
+where $i \in \{T, P\}$, $\parallel$ denotes concatenation, and $\odot$ denotes element-wise multiplication. A value of $\alpha_i$ near $0.5$ retains both the ordered update and the modality-specific latent. The CNV representation passed to the next stage is $Z_G$.
+
+\subsection{Token Self-Attention and Classification}
+The three latents are then treated as tokens. A learned pool token is prepended and the sequence is passed through a two-layer Transformer encoder \cite{Vaswani2017Attention} with 8 heads:
+\begin{equation}
+    [u; \tilde{Z}_G; \tilde{F}_T; \tilde{F}_P]
+    = \mathrm{Transformer}([u_0; Z_G; F_T; F_P]).
+\end{equation}
+The classifier uses only the pool token,
+\begin{equation}
+    \hat{y} = \mathrm{Softmax}(\mathrm{MLP}(u)).
+\end{equation}
+The model is optimized with cross-entropy. Self-attention therefore mixes the three omic tokens after the ordered update. Because this operation acts on omic tokens rather than on individual genes, the feature ranking below uses input gradients.
+
+\subsection{Experimental Setup}
+For model evaluation, we applied stratified 5-fold cross-validation to each cohort so that subtype proportions were preserved across folds. In each iteration, one fold was held out for testing and the remaining four folds were used for training. Reported performance values are averaged across the five runs, reducing dependence on any single train-test split. To evaluate the model’s performance, we report Accuracy (Acc) and F1 Score (F1).
+
+Each modality was encoded into a shared latent space of $d=128$ via a ReLU MLP with a 512-dimensional hidden layer. Self-attention over omic tokens used 8 heads ($d_k=16$) and 2 Transformer layers. The classifier was a ReLU MLP with a 128-unit hidden layer and dropout 0.4. Models were trained on an NVIDIA Tesla V100 GPU for up to 200 epochs using AdamW, learning rate $2 \times 10^{-4}$, weight decay $1 \times 10^{-5}$, batch size 32 and Cross-Entropy loss.
+
+The OSCAR framework, visualized in Figure \ref{fig:model}, integrates multi-omic data in four stages: per-omic MLP encoding, ordered cross-attention, gated fusion, and self-attention over the omic tokens.
+
+\subsubsection{Interpretability Analysis}
+To read which input features the trained BRCA classifier uses, we computed input-gradient saliency on held-out validation folds using the fold-wise best checkpoint.
+Specifically, we attributed the true-class logit by the mean absolute gradient $\mathrm{Mean}\,|\partial\mathrm{logit}/\partial x|$ with respect to each CNV, mRNA, and RPPA input feature under evaluation mode.
+Features that appeared in the per-omic top-$20$ in at least three of five folds were retained as consensus candidates ($51$ features on BRCA).
+We further assessed one-versus-rest differential abundance on the full cohort ($N=511$) with a Mann--Whitney $U$ test, Benjamini--Hochberg FDR \cite{Benjamini1995FDR} within each omic$\times$class consensus set, and Cohen's $d$.
+A consensus feature passed this filter when $q<0.05$ and $|d|\ge 0.3$ ($45/51$ features).
+Over-representation used Enrichr \cite{Kuleshov2016Enrichr} with GO Biological Process 2025 \cite{Ashburner2000GO}, KEGG 2021 Human \cite{Kanehisa2000KEGG}, and MSigDB Hallmark 2020 \cite{Liberzon2015Hallmark}.
+
+\section{Results}
+\subsection{Performance Evaluation and Comparison}
+
+\begin{table*}[htbp]
+\centering
+\small
+\caption{Classification performance comparison against existing methods (mean $\pm$ std \%). Bold indicates best performance.}
+\label{tab:results}
+\begin{tabular}{l|cc|cc|cc}
+\hline
+\textbf{Method} & \multicolumn{2}{c|}{\textbf{BRCA}} & \multicolumn{2}{c|}{\textbf{LUNG}} & \multicolumn{2}{c}{\textbf{COADREAD}} \\
+ & F1 Score (\%) & Acc (\%) & F1 Score (\%) & Acc (\%) & F1 Score (\%) & Acc (\%) \\ \hline
+MoGCN \cite{MoGCN2022} & 87.42 $\pm$ 2.15 & 86.91 $\pm$ 3.10 & 94.12 $\pm$ 1.88 & 93.85 $\pm$ 1.95 & 90.12 $\pm$ 2.45 & 89.34 $\pm$ 3.10 \\
+moBRCA-net \cite{moBRCAnat2023} & 89.15 $\pm$ 1.20 & 88.54 $\pm$ 1.45 & -- & -- & -- & -- \\
+MoxGATE \cite{MoxGATE2023} & 90.24 $\pm$ 3.01 & 89.73 $\pm$ 3.42 & 96.01 $\pm$ 2.05 & 95.87 $\pm$ 2.11 & 92.16 $\pm$ 1.22 & 91.67 $\pm$ 4.27 \\ 
+MOGONET \cite{MOGONET2021} & 72.47 $\pm$ 2.60 & 71.10 $\pm$ 2.27 & 91.14 $\pm$ 3.18 & 91.45 $\pm$ 3.03 & 74.28 $\pm$ 5.27 & 73.28 $\pm$ 5.71 \\ \hline
+\textbf{OSCAR} & \textbf{91.36 $\pm$ 2.26} & \textbf{91.27 $\pm$ 2.22} & \textbf{96.76 $\pm$ 1.37} & \textbf{96.71 $\pm$ 1.42} & \textbf{93.14 $\pm$ 3.28} & \textbf{92.34 $\pm$ 3.98} \\ \hline
+\end{tabular}
+\end{table*}
+
+We present the main comparative results in Table \ref{tab:results}. Overall, the proposed OSCAR framework with Gated Fusion delivers the strongest and most consistent performance across the three benchmark cohorts. Importantly, OSCAR is not only competitive on a single preferred metric, but remains robust across both F1 score and accuracy, indicating that the model balances class-sensitive performance with global predictive reliability.
+
+
+
+Several findings deserve emphasis. First, the results on BRCA provide the clearest evidence of the value of hierarchical multi-omic modeling. BRCA is the most heterogeneous cohort in our study, comprising four molecularly distinct subtypes with overlapping biological signatures. In this challenging setting, our model achieves the best overall performance, reaching 91.36\% F1 and 91.27\% accuracy. Compared with the specialized moBRCA-net \cite{moBRCAnat2023}, OSCAR improves the F1 score by 2.21\% and the accuracy by 2.73\%. It also surpasses the more general graph-based baseline MoGCN \cite{MoGCN2022} by even larger margins. These gains are important because BRCA is precisely the kind of dataset in which subtle cross-omic dependencies matter most; the improvement suggests that explicitly respecting the biological progression from genomics to transcriptomics and proteomics helps the model discriminate among closely related subtypes more effectively than flat fusion strategies.
+
+Second, the method demonstrates strong generalization across different cancer types. On the LUNG cohort, OSCAR achieves 96.76\% F1 and 96.71\% accuracy, outperforming all competing methods on both metrics. This result is particularly notable because it shows that the proposed directional inductive bias does not overfit to one tissue context or one subtype taxonomy. Instead, it appears to capture a more general integration principle that remains effective even when the molecular landscape changes. The relatively small standard deviations on LUNG further indicate that the gains are stable across repeated runs rather than being driven by a favorable split or isolated experimental fluctuation.
+
+Third, on COADREAD, OSCAR reaches 93.14\% F1 and 92.34\% accuracy, compared with 92.16\% and 91.67\% for MoxGATE \cite{MoxGATE2023}. The margins are 0.98 and 0.67 points, while the fold standard deviations are about 3--4 points, so the differences on this cohort lie within the fold-to-fold variation.
+
+Across cohorts, OSCAR attains the highest F1 and accuracy. The margin is largest on BRCA and smallest on COADREAD. The order ablation below relates this pattern to the CNV $\rightarrow$ mRNA $\rightarrow$ RPPA direction.
+
+\subsection{Ablation Study}
+
+
+To rigorously evaluate the contribution of each module within our framework, we conducted a series of ablation experiments on the BRCA and LUNG datasets. These experiments focus on two aspects: the architectural components and the hierarchical sequence of the attention mechanism.
+
+\subsubsection{Importance of Model Components}
+We compared the full model against three variants: concatenation of the omic latents (Concat), removal of self-attention over those tokens (w/o Self-Attention), and replacement of the adaptive gate by a linear projection (w/o Gated Fusion). The results, summarized in Table \ref{tab:ablation_components}, illustrate the critical role of each module in achieving high classification accuracy.
+
+
+\begin{table*}[!htbp]
+\centering
+\small
+\caption{Ablation study of proposed model components (\% Accuracy).}
+\label{tab:ablation_components}
+\begin{tabular}{lccc}
+\hline
+\textbf{Model Variant} & \textbf{BRCA} & \textbf{LUNG} & \textbf{COADREAD} \\ \hline
+Concat (baseline)      & 85.85 $\pm$ 4.08 & 93.43 $\pm$ 1.15 & 89.60 $\pm$ 3.60 \\
+w/o Self-Attention     & 87.12 $\pm$ 2.45 & 94.88 $\pm$ 1.62 & 90.45 $\pm$ 2.80 \\
+w/o Gated Fusion       & 88.24 $\pm$ 3.01 & 96.10 $\pm$ 1.31 & 91.62 $\pm$ 4.55 \\ \hline
+\textbf{OSCAR (Full)} & \textbf{91.27 $\pm$ 2.22} & \textbf{96.71 $\pm$ 1.42} & \textbf{92.34 $\pm$ 3.98} \\ \hline
+\end{tabular}
+\end{table*}
+
+On BRCA, concatenation reaches 85.85\% and the model without token self-attention reaches 87.12\%, against 91.27\% for the full model (Table \ref{tab:ablation_components}). This layer mixes the three latent tokens after the ordered update and does not operate on individual genes. 
+
+Removing Gated Fusion lowers accuracy from 91.27\% to 88.24\% on BRCA, from 96.71\% to 96.10\% on LUNG, and from 92.34\% to 91.62\% on COADREAD. On BRCA the recorded gates remain approximately $0.5$ (Fig.~\ref{fig:gates}).
+
+\subsubsection{Impact of Cross-Attention Order}
+A unique hypothesis of our framework is that following the biological ``Central Dogma" sequence provides a superior inductive bias. To validate this, we compared our $Genomics\ (CNV) \rightarrow Transcriptomics\ (mRNA) \rightarrow Proteomics\ (RPPA)$ flow against alternative permutations. As shown in Table \ref{tab:ablation_order}, the biological order consistently outperforms mixed or reverse sequences across all datasets.
+
+\begin{table*}[!htbp]
+\centering
+\small
+\caption{Impact of different cross-attention orders on classification accuracy (\%).}
+\label{tab:ablation_order}
+\begin{tabular}{lccc}
+\hline
+
+\textbf{Ordering Strategy} & \textbf{BRCA} & \textbf{LUNG} & \textbf{COADREAD} \\ \hline
+$Proteomics \rightarrow Transcriptomics \rightarrow Genomics$ & 86.44 $\pm$ 2.10 & 94.05 $\pm$ 1.85 & 89.09 $\pm$ 4.16 \\
+(Reverse) \\
+$Transcriptomics \rightarrow Genomics \rightarrow Proteomics $ & 88.27 $\pm$ 4.11 & 95.12 $\pm$ 1.40 & 90.43 $\pm$ 3.85 \\
+(Mixed) \\
+\textbf{$ Genomics \rightarrow Transcriptomics \rightarrow Proteomics $} & \textbf{91.27 $\pm$ 2.22} & \textbf{96.71 $\pm$ 1.42} & \textbf{92.34 $\pm$ 3.98} \\ 
+\textbf{(OSCAR)}\\ 
+
+\hline
+\end{tabular}
+\end{table*}
+
+
+Reversing the order, from proteomics to transcriptomics to genomics, lowers BRCA accuracy by approximately 3.83\%. The comparison indicates that the direction of the cross-attention update affects classification performance.
+
+% \section{Model Explainability}
+% To ensure clinical relevance, we analyzed the interpretability of OSCAR through attention weight visualization.
+
+% \subsection{Feature Importance and Biomarker Discovery}
+% By extracting the attention scores from the final layer, we identified the top-contributing features for each cancer subtype. For example, in the BRCA dataset, the model assigned high weights to the $ERBB2$ gene at the RNA level and its corresponding protein expression in HER2-enriched samples. This alignment with established clinical biomarkers validates that our model learns the underlying biology of cancer rather than mere statistical noise.
+
+% \subsection{Cross-omic Correlation Analysis}
+% We visualized the cross-attention maps between the $CNV$ and $RNA$ layers. The diagonal patterns observed in these maps suggest that the model successfully learns the "cis-acting" effects, where a copy number gain in a specific genomic region directly correlates with the over-expression of mRNA in that same region. These insights could potentially assist researchers in identifying novel regulatory drivers for rare cancer subtypes.
+
+
+% \section{Discussion and Interpretability}
+
+\subsection{Model Interpretability and Biological Implication}
+
+The comparisons above show that OSCAR outperforms the symmetric fusion baselines on all three cohorts, and that the Central Dogma order outperforms the reverse and mixed orders (Table \ref{tab:ablation_order}). The saliency analysis below reads the trained BRCA model at the input, using the gradient protocol in Section~II, and then checks sign, concordance, and pathway coherence on the consensus list.
+
+\subsubsection{Input Features Used by the Classifier}
+
+To identify the input features used by the trained classifier, we computed multi-omic input-gradient saliency as described in Section~II.
+Five-fold consensus retained $51$ features, of which $45$ also passed the differential-abundance filter ($16/16$ Luminal~A, $5/5$ Luminal~B, $20/21$ HER2-enriched, and $4/9$ Basal-like).
+Benjamini--Hochberg adjustment for that filter is computed inside each omic$\times$class consensus set, not across the genome.
+Pathway coherence was assessed by Enrichr over-representation on these gene lists.
 
 \begin{figure*}[htbp]
     \centering
-    \includegraphics[width=1\textwidth]{attention_plots/biomarker_step1_consensus/hbar_consensus_all_subtypes.png}
-    \caption{Five-fold consensus gradient biomarkers across BRCA subtypes (horizontal bars; color = omic; labels show fold recurrence).
-    Panel order: \textbf{(A)} Luminal~A, \textbf{(B)} Luminal~B, \textbf{(C)} Basal-like, \textbf{(D)} HER2-enriched.
-    Top-12 per subtype by mean absolute gradient; panel-specific \emph{x}-scales.
-    Luminal panels emphasize mitotic / cell-cycle programs~\cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Malorni2016RBsig}.
-    HER2-enriched recovers the 17q12 amplicon~\cite{Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon};
-    Basal-like consensus is more heterogeneous.}
+    \includegraphics[width=1\textwidth]{OSCAR_Lollipop_Scientific_Edition_7_2.png} 
+    \caption{Five-fold consensus input-gradient features across BRCA subtypes (mRNA, CNV, and proteomics; color encodes omic).
+    Panel order follows subtype indices: \textbf{(A)} Luminal~A, \textbf{(B)} Luminal~B, \textbf{(C)} Basal-like, and \textbf{(D)} HER2-enriched.
+    Mitotic and 17q12 genes that match known subtype programs are interpreted in the text as a consistency check~\cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Malorni2016RBsig,Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon}.
+    The remaining consensus features, including \textit{TBC1D31} and \textit{GAS2L3} where they appear, are additional high-ranking features. Their functions are discussed in the text; they are not reported as new biomarkers.
+    The Basal-like panel is more heterogeneous.}
     \label{fig:combined_saliency}
 \end{figure*}
 
+\begin{figure*}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{img/cohens_d_by_subtype.png}
+    \caption{One-versus-rest Cohen's $d$ for the $51$ consensus features.
+    Filled markers pass $q<0.05$ and $|d|\ge 0.3$; open markers are gradient-stable but do not pass differential abundance.
+    Panel order matches Fig.~\ref{fig:combined_saliency}.}
+    \label{fig:cohens_d}
+\end{figure*}
+
 \paragraph{Recovery of established subtype programs.}
-As summarized in Fig.~\ref{fig:combined_saliency}, OSCAR focuses on biologically recognized programs
-\emph{without} injecting curated biomarker priors into training:
+As summarized in Fig.~\ref{fig:combined_saliency}, the highest-ranked features fall in biologically recognized programs.
+Those programs were not supplied as training labels:
 
 \begin{itemize}
     \item \textit{Luminal A and B.}
     Consensus features are enriched for mitotic apparatus and cell-cycle genes
     (e.g.\ \textit{ASPM}, \textit{CEP55}, \textit{CENPE}, \textit{NUF2}, \textit{DLGAP5}, \textit{CDKN3}, \textit{KIF11},
     \textit{GTSE1}, \textit{SGO1}), in line with proliferation-oriented distinctions among luminal tumors
-    \cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Althobiti2024ASPM}.
-    Hallmark over-representation further supports this reading, with significant enrichment for
-    \textbf{E2F Targets}, \textbf{G2--M Checkpoint}, and \textbf{Mitotic Spindle}
-    \cite{Malorni2016RBsig,Liberzon2015Hallmark}.
-    Differential abundance clarifies polarity: mitotic transcripts are systematically \emph{lower} in Luminal~A versus
-    the remainder and comparatively \emph{higher} in Luminal~B, matching the more proliferative luminal phenotype
+    \cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Ibrahim2024ASPM}.
+    Hallmark and GO Biological Process over-representation on this list names a cell-cycle vocabulary (Table~\ref{tab:luma_enrichment}) \cite{Malorni2016RBsig,Liberzon2015Hallmark}.
+    KEGG terms for this $16$-gene list do not pass FDR.
+    Over-representation treats the list as an unordered gene set, so these terms name a cell-cycle vocabulary and do not themselves say whether the transcripts are higher or lower in Luminal~A.
+    With $5$--$16$ genes per subtype, the enrichment supports that vocabulary for the Luminal~A list rather than a genome-wide pathway screen.
+    Differential abundance clarifies polarity (Fig.~\ref{fig:cohens_d}): mitotic transcripts are systematically lower in Luminal~A
+    (Cohen's $d$ from about $-1.7$ to $-2.1$; \textit{SGO1} $d=-2.14$, \textit{CEP55} $d=-2.12$) and higher in Luminal~B
+    (about $+0.6$ to $+0.9$), matching the more proliferative luminal phenotype
     \cite{Ades2014LuminalB}.
+    At the protein layer, INPP4B is higher in Luminal~A ($d=+1.05$), consistent with its expression in ER-positive luminal cells and its frequent loss in basal-like carcinomas \cite{Fedele2010INPP4B,Gewinner2009INPP4B}.
+    P53 protein is lower ($d=-0.78$), in line with the low \textit{TP53}-mutation rate of Luminal~A relative to basal-like disease \cite{Koboldt2012BRCA}.
+    EEF2 protein is also lower ($d=-0.80$); the measurement is reported as an effect size.
 
     \item \textit{HER2-enriched.}
     Consensus features are dominated by the 17q12/\textit{ERBB2} amplicon neighborhood at both CNV and mRNA levels
     (e.g.\ \textit{STARD3}, \textit{TCAP}, \textit{MIEN1}, \textit{GRB7}, \textit{PGAP3}, \textit{PNMT}, \textit{CDK12}, \textit{GSDMB}),
     consistent with genomic characterization of HER2-positive disease
     \cite{Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon}.
+    Twenty of the $21$ HER2 consensus features pass differential abundance.
+    Five symbols are consensus features in both CNV and mRNA, with the same sign and large effects
+    (Fig.~\ref{fig:her2_concordance}): \textit{STARD3} ($d_{\mathrm{CNV}}=1.87$, $d_{\mathrm{mRNA}}=2.40$),
+    \textit{MIEN1} ($1.94$, $2.25$), \textit{TCAP} ($1.87$, $2.18$), \textit{GRB7} ($1.94$, $2.15$), and \textit{PNMT} ($1.87$, $1.79$).
+    This CNV$\cap$mRNA concordance supports cis-acting amplification--expression coupling at 17q12 \cite{Pollack2002Cis,Staaf2010HER2,Kao2006Amplicon}.
 
     \item \textit{Basal-like.}
-    The basal panel is more mixed (e.g.\ \textit{MIA}, \textit{PGAP3}, GATA3 / phospho-TUBERIN proteomics),
-    consistent with basal-like heterogeneity~\cite{Koboldt2012BRCA}, and is treated as hypothesis-generating.
+    Only $4$ of $9$ basal consensus features pass differential abundance.
+    The supported signals are \textit{MIA} mRNA (higher vs.\ rest, $d=+2.33$), \textit{PGAP3} mRNA ($d=-1.15$),
+    GATA3 protein ($d=-2.24$), and phospho-TUBERIN/TSC2 ($d=-0.44$).
+    Low GATA3 protein agrees with its function as a luminal epithelial transcription factor that is reduced in high-grade, hormone-receptor-negative carcinomas \cite{Mehra2005GATA3}.
+    \textit{PGAP3} belongs to the 17q12 amplicon \cite{Kao2006Amplicon,Staaf2010HER2}, so its lower abundance outside HER2-enriched tumors is the counterpart of that gain rather than a separate basal program.
+    \textit{MIA} carries the largest of these basal effect sizes, and phospho-TUBERIN/TSC2 the smallest.
+    Both remain measured attributions, pending a subtype-specific reading.
+    Copy-number features from the \textit{ERBB2} neighborhood that are gradient-stable for this class
+    (\textit{ERBB2}, \textit{GRB7}, \textit{TCAP}, \textit{PGAP3}, \textit{PPP1R1B}) do not pass the abundance filter.
+    The basal list is therefore mixed rather than a single amplicon program, consistent with the molecular diversity of basal-like disease
+    \cite{Koboldt2012BRCA}. These are features the classifier uses, and they suggest a mixed basal reading rather than one program.
 \end{itemize}
 
-\paragraph{Model-nominated candidates beyond textbook markers.}
+\begin{table}[t]
+\centering
+\caption{Enrichr over-representation for the Luminal~A consensus gene list (16 genes). Adjusted $P$ is the Enrichr FDR. KEGG 2021 Human terms for this list do not pass $0.05$.}
+\label{tab:luma_enrichment}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+\textbf{Library} & \textbf{Term} & \textbf{Overlap} & \textbf{Adj.\ $P$} \\
+\midrule
+Hallmark & E2F Targets & 4/200 & $1.6\times 10^{-4}$ \\
+Hallmark & G2--M Checkpoint & 3/200 & $1.7\times 10^{-3}$ \\
+Hallmark & Mitotic Spindle & 3/199 & $1.7\times 10^{-3}$ \\
+GO:BP & Kinetochore organization & 3/11 & $1.1\times 10^{-5}$ \\
+GO:BP & Mitotic spindle organization & 4/90 & $4.1\times 10^{-5}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{img/cnv_mrna_concordance_her2.png}
+    \caption{HER2-enriched consensus genes present in both CNV and mRNA. Both layers are higher than the rest of the cohort, consistent with cis-acting 17q12 amplification \cite{Pollack2002Cis,Staaf2010HER2}.}
+    \label{fig:her2_concordance}
+\end{figure}
+
+\paragraph{Additional high-ranking genes.}
+Beyond the programs above, the same ranking also places weight on genes that are less often used to name these subtypes. Their reported functions suggest a direction for a later reading:
+
 \begin{itemize}
-    \item \textit{TBC1D31} --- luminal A/B contrast; trafficking / metabolic context~\cite{Arora2024TBC1D,Senatore2021TBC1D31}.
-    \item \textit{GAS2L3} --- Luminal~A-low cytokinesis gene under DREAM/E2F control~\cite{Wolter2012GAS2L3,Peer2013GAS2L3}.
+    \item \textit{TBC1D31} (mRNA) was consensus-stable for both Luminal~A (decreased vs.\ rest, $d=-1.39$, $3/5$ folds) and Luminal~B
+    (increased vs.\ rest, $d=+0.91$, $4/5$ folds).
+    TBC1D31 participates in a centrosomal complex that controls primary ciliogenesis \cite{Senatore2021TBC1D31}.
+    A separate study links the broader TBC1-domain family, and \textit{TBC1D7} in particular, to a glycolytic phenotype in triple-negative breast cancer \cite{Lupi2024TBC1D}.
+    The Luminal~A/B contrast is a rank from the true-class logit. The ciliogenesis function suggests one direction in which that contrast could be read.
+    The cited \textit{TBC1D7} result remains a finding about a different gene in triple-negative disease.
+
+    \item \textit{GAS2L3} (mRNA) was a strong Luminal~A consensus feature ($d=-1.56$, $q=1.7\times 10^{-47}$ inside the Luminal~A mRNA consensus set).
+    GAS2L3 is a DREAM/E2F-regulated cytokinesis gene required for abscission and genomic stability
+    \cite{Wolter2012GAS2L3,Peer2013GAS2L3}. That function sits next to the Hallmark E2F / G2--M terms for Luminal~A
+    and suggests a cytokinesis reading of the same cell-cycle list. It does not establish \textit{GAS2L3} as a subtype marker.
 \end{itemize}
 
-\paragraph{Take-home.}
-Known-program recovery supports interpretability; \textit{TBC1D31} and \textit{GAS2L3} are
-hypothesis-generating candidates rather than claimed clinical biomarkers
-\cite{Arora2024TBC1D,Wolter2012GAS2L3,PerezPena2017MitoticLumA,Staaf2010HER2,Gao2018LuminalA,Ades2014LuminalB}.
+\paragraph{Summary.}
+Input-gradient saliency ranks features of the trained classifier.
+Agreement with luminal proliferation and the HER2 amplicon is a consistency check.
+That ranking does not show that ordered cross-attention learned directional regulation, does not identify causal cross-omic effects, and does not establish \textit{TBC1D31} or \textit{GAS2L3} as new clinical biomarkers.
+
+\subsubsection{Gated Fusion across BRCA Subtypes}
+High mRNA abundance does not always produce a matching protein level, because post-transcriptional regulation intervenes \cite{Liu2016mRNAProtein}.
+The gated fusion is the component that can weigh the ordered-cross-attention latent $H_i$ against the modality-specific latent $Z_i$.
+
+On BRCA this gate was evaluated on held-out validation folds, using each fold's best checkpoint.
+The gate is a $128$-dimensional vector.
+Fig.~\ref{fig:gates} summarizes, for each subtype, the mean across latent dimensions and the fraction of dimensions above $0.5$, averaged over the five folds.
+Mean gates are approximately $0.5$ for every subtype: about $0.52$--$0.54$ for mRNA and $0.50$ for RPPA.
+The fraction of dimensions above $0.5$ is about $0.56$--$0.58$ for mRNA and $0.51$--$0.53$ for RPPA, and the fold-to-fold spread overlaps Luminal~A, Luminal~B, Basal-like, and HER2-enriched tumors.
+A mean weight near $0.5$ indicates that the learned gate retains both the ordered-cross-attention representation and the modality-specific latent for every BRCA subtype.
+Removing the gate lowers accuracy (Table~\ref{tab:ablation_components}).
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{img/gate_by_subtype.png}
+    \caption{BRCA gated fusion on validation folds. Points are means across five folds and whiskers are the corresponding standard deviations.
+    The axis is focused around $0.5$, the value at which the raw latent and the ordered-cross-attention latent are weighted equally.}
+    \label{fig:gates}
+\end{figure}
+
+\section{Conclusions and Discussions}
+
+OSCAR implements the regulatory order CNV $\rightarrow$ mRNA $\rightarrow$ RPPA in cross-attention. On BRCA, LUNG, and COADREAD the model reaches 91.27\%, 96.71\%, and 92.34\% accuracy, exceeding MoGCN \cite{MoGCN2022}, MOGONET \cite{MOGONET2021}, and MoxGATE \cite{MoxGATE2023}. The same order outperforms reverse and mixed attention (Table \ref{tab:ablation_order}). On BRCA the gate remains approximately $0.5$ for every subtype (Fig.~\ref{fig:gates}). BRCA input gradients are the consistency check in Section~III.
+
+Class imbalance is still unresolved. Luminal~A is 48.5\% of BRCA and HER2-enriched is 10.4\% (Table \ref{tab:dataset_summary}). Replacing cross-entropy with focal loss \cite{FocalLoss2017} at $\gamma \in \{0.5, 2, 5\}$ raised recall on the minority class and lowered precision on Luminal~A and Luminal~B, so the reported model keeps cross-entropy. Later work can place DNA methylation at the start of the hierarchy and extend the task from subtype classification to survival.
+
+
+% \section*{References}
+\bibliographystyle{ieeetr} 
+\bibliography{reference}
+
+
+% \section{The Design, Intent, and \\ Limitations of the Templates}
+% The templates are intended to {\bf{approximate the final look and page length of the articles/papers}}. {\bf{They are NOT intended to be the final produced work that is displayed in print or on IEEEXplore\textsuperscript{\textregistered}}}. They will help to give the authors an approximation of the number of pages that will be in the final version. The structure of the \LaTeX\ files, as designed, enable easy conversion to XML for the composition systems used by the IEEE. The XML files are used to produce the final print/IEEEXplore pdf and then converted to HTML for IEEEXplore.
+
+% \section{Where to Get \LaTeX \ Help --- User Groups}
+% The following online groups are helpful to beginning and experienced \LaTeX\ users. A search through their archives can provide many answers to common questions.
+% \begin{list}{}{}
+% \item{\url{http://www.latex-community.org/}} 
+% \item{\url{https://tex.stackexchange.com/} }
+% \end{list}
+
+% \section{Other Resources}
+% See \cite{ref1,ref2,ref3,ref4,ref5} for resources on formatting math into text and additional help in working with \LaTeX .
+
+% \section{Text}
+% For some of the remainer of this sample we will use dummy text to fill out paragraphs rather than use live text that may violate a copyright.
+
+% Itam, que ipiti sum dem velit la sum et dionet quatibus apitet voloritet audam, qui aliciant voloreicid quaspe volorem ut maximusandit faccum conemporerum aut ellatur, nobis arcimus.
+% Fugit odi ut pliquia incitium latum que cusapere perit molupta eaquaeria quod ut optatem poreiur? Quiaerr ovitior suntiant litio bearciur?
+
+% Onseque sequaes rectur autate minullore nusae nestiberum, sum voluptatio. Et ratem sequiam quaspername nos rem repudandae volum consequis nos eium aut as molupta tectum ulparumquam ut maximillesti consequas quas inctia cum volectinusa porrum unt eius cusaest exeritatur? Nias es enist fugit pa vollum reium essusam nist et pa aceaqui quo elibusdandis deligendus que nullaci lloreri bla que sa coreriam explacc atiumquos simolorpore, non prehendunt lam que occum\cite{ref6} si aut aut maximus eliaeruntia dia sequiamenime natem sendae ipidemp orehend uciisi omnienetus most verum, ommolendi omnimus, est, veni aut ipsa volendelist mo conserum volores estisciis recessi nveles ut poressitatur sitiis ex endi diti volum dolupta aut aut odi as eatquo cullabo remquis toreptum et des accus dolende pores sequas dolores tinust quas expel moditae ne sum quiatis nis endipie nihilis etum fugiae audi dia quiasit quibus.
+% \IEEEpubidadjcol
+% Ibus el et quatemo luptatque doluptaest et pe volent rem ipidusa eribus utem venimolorae dera qui acea quam etur aceruptat.
+% Gias anis doluptaspic tem et aliquis alique inctiuntiur?
+
+% Sedigent, si aligend elibuscid ut et ium volo tem eictore pellore ritatus ut ut ullatus in con con pere nos ab ium di tem aliqui od magnit repta volectur suntio. Nam isquiante doluptis essit, ut eos suntionsecto debitiur sum ea ipitiis adipit, oditiore, a dolorerempos aut harum ius, atquat.
+
+% Rum rem ditinti sciendunti volupiciendi sequiae nonsect oreniatur, volores sition ressimil inus solut ea volum harumqui to see\eqref{deqn_ex1a} mint aut quat eos explis ad quodi debis deliqui aspel earcius.
+
+% \begin{equation}
+% \label{deqn_ex1a}
+% x = \sum_{i=0}^{n} 2{i} Q.
+% \end{equation}
+
+% Alis nime volorempera perferi sitio denim repudae pre ducilit atatet volecte ssimillorae dolore, ut pel ipsa nonsequiam in re nus maiost et que dolor sunt eturita tibusanis eatent a aut et dio blaudit reptibu scipitem liquia consequodi od unto ipsae. Et enitia vel et experferum quiat harum sa net faccae dolut voloria nem. Bus ut labo. Ita eum repraer rovitia samendit aut et volupta tecupti busant omni quiae porro que nossimodic temquis anto blacita conse nis am, que ereperum eumquam quaescil imenisci quae magnimos recus ilibeaque cum etum iliate prae parumquatemo blaceaquiam quundia dit apienditem rerit re eici quaes eos sinvers pelecabo. Namendignis as exerupit aut magnim ium illabor roratecte plic tem res apiscipsam et vernat untur a deliquaest que non cus eat ea dolupiducim fugiam volum hil ius dolo eaquis sitis aut landesto quo corerest et auditaquas ditae voloribus, qui optaspis exero cusa am, ut plibus.
+
+
+% \section{Some Common Elements}
+% \subsection{Sections and Subsections}
+% Enumeration of section headings is desirable, but not required. When numbered, please be consistent throughout the article, that is, all headings and all levels of section headings in the article should be enumerated. Primary headings are designated with Roman numerals, secondary with capital letters, tertiary with Arabic numbers; and quaternary with lowercase letters. Reference and Acknowledgment headings are unlike all other section headings in text. They are never enumerated. They are simply primary headings without labels, regardless of whether the other headings in the article are enumerated. 
+
+% \subsection{Citations to the Bibliography}
+% The coding for the citations is made with the \LaTeX\ $\backslash${\tt{cite}} command. 
+% This will display as: see \cite{ref1}.
+
+% For multiple citations code as follows: {\tt{$\backslash$cite\{ref1,ref2,ref3\}}}
+%  which will produce \cite{ref1,ref2,ref3}. For reference ranges that are not consecutive code as {\tt{$\backslash$cite\{ref1,ref2,ref3,ref9\}}} which will produce  \cite{ref1,ref2,ref3,ref9}
+
+% \subsection{Lists}
+% In this section, we will consider three types of lists: simple unnumbered, numbered, and bulleted. There have been many options added to IEEEtran to enhance the creation of lists. If your lists are more complex than those shown below, please refer to the original ``IEEEtran\_HOWTO.pdf'' for additional options.\\
+
+% \subsubsection*{\bf A plain  unnumbered list}
+% \begin{list}{}{}
+% \item{bare\_jrnl.tex}
+% \item{bare\_conf.tex}
+% \item{bare\_jrnl\_compsoc.tex}
+% \item{bare\_conf\_compsoc.tex}
+% \item{bare\_jrnl\_comsoc.tex}
+% \end{list}
+
+% \subsubsection*{\bf A simple numbered list}
+% \begin{enumerate}
+% \item{bare\_jrnl.tex}
+% \item{bare\_conf.tex}
+% \item{bare\_jrnl\_compsoc.tex}
+% \item{bare\_conf\_compsoc.tex}
+% \item{bare\_jrnl\_comsoc.tex}
+% \end{enumerate}
+
+% \subsubsection*{\bf A simple bulleted list}
+% \begin{itemize}
+% \item{bare\_jrnl.tex}
+% \item{bare\_conf.tex}
+% \item{bare\_jrnl\_compsoc.tex}
+% \item{bare\_conf\_compsoc.tex}
+% \item{bare\_jrnl\_comsoc.tex}
+% \end{itemize}
+
+
+
+
+
+% \subsection{Figures}
+% Fig. 1 is an example of a floating figure using the graphicx package.
+%  Note that $\backslash${\tt{label}} must occur AFTER (or within) $\backslash${\tt{caption}}.
+%  For figures, $\backslash${\tt{caption}} should occur after the $\backslash${\tt{includegraphics}}.
+
+% \begin{figure}[!t]
+% \centering
+% \includegraphics[width=2.5in]{fig1}
+% \caption{Simulation results for the network.}
+% \label{fig_1}
+% \end{figure}
+
+% Fig. 2(a) and 2(b) is an example of a double column floating figure using two subfigures.
+%  (The subfig.sty package must be loaded for this to work.)
+%  The subfigure $\backslash${\tt{label}} commands are set within each subfloat command,
+%  and the $\backslash${\tt{label}} for the overall figure must come after $\backslash${\tt{caption}}.
+%  $\backslash${\tt{hfil}} is used as a separator to get equal spacing.
+%  The combined width of all the parts of the figure should do not exceed the text width or a line break will occur.
+% %
+% \begin{figure*}[!t]
+% \centering
+% \subfloat[]{\includegraphics[width=2.5in]{fig1}%
+% \label{fig_first_case}}
+% \hfil
+% \subfloat[]{\includegraphics[width=2.5in]{fig1}%
+% \label{fig_second_case}}
+% \caption{Dae. Ad quatur autat ut porepel itemoles dolor autem fuga. Bus quia con nessunti as remo di quatus non perum que nimus. (a) Case I. (b) Case II.}
+% \label{fig_sim}
+% \end{figure*}
+
+% Note that often IEEE papers with multi-part figures do not place the labels within the image itself (using the optional argument to $\backslash${\tt{subfloat}}[]), but instead will
+%  reference/describe all of them (a), (b), etc., within the main caption.
+%  Be aware that for subfig.sty to generate the (a), (b), etc., subfigure
+%  labels, the optional argument to $\backslash${\tt{subfloat}} must be present. If a
+%  subcaption is not desired, leave its contents blank,
+%  e.g.,$\backslash${\tt{subfloat}}[].
+
+
+ 
+
+% \section{Tables}
+% Note that, for IEEE-style tables, the
+%  $\backslash${\tt{caption}} command should come BEFORE the table. Table captions use title case. Articles (a, an, the), coordinating conjunctions (and, but, for, or, nor), and most short prepositions are lowercase unless they are the first or last word. Table text will default to $\backslash${\tt{footnotesize}} as
+%  the IEEE normally uses this smaller font for tables.
+%  The $\backslash${\tt{label}} must come after $\backslash${\tt{caption}} as always.
+ 
+% \begin{table}[!t]
+% \caption{An Example of a Table\label{tab:table1}}
+% \centering
+% \begin{tabular}{|c||c|}
+% \hline
+% One & Two\\
+% \hline
+% Three & Four\\
+% \hline
+% \end{tabular}
+% \end{table}
+
+% \section{Algorithms}
+% Algorithms should be numbered and include a short title. They are set off from the text with rules above and below the title and after the last line.
+
+% \begin{algorithm}[H]
+% \caption{Weighted Tanimoto ELM.}\label{alg:alg1}
+% \begin{algorithmic}
+% \STATE 
+% \STATE {\textsc{TRAIN}}$(\mathbf{X} \mathbf{T})$
+% \STATE \hspace{0.5cm}$ \textbf{select randomly } W \subset \mathbf{X}  $
+% \STATE \hspace{0.5cm}$ N_\mathbf{t} \gets | \{ i : \mathbf{t}_i = \mathbf{t} \} | $ \textbf{ for } $ \mathbf{t}= -1,+1 $
+% \STATE \hspace{0.5cm}$ B_i \gets \sqrt{ \textsc{max}(N_{-1},N_{+1}) / N_{\mathbf{t}_i} } $ \textbf{ for } $ i = 1,...,N $
+% \STATE \hspace{0.5cm}$ \hat{\mathbf{H}} \gets  B \cdot (\mathbf{X}^T\textbf{W})/( \mathbb{1}\mathbf{X} + \mathbb{1}\textbf{W} - \mathbf{X}^T\textbf{W} ) $
+% \STATE \hspace{0.5cm}$ \beta \gets \left ( I/C + \hat{\mathbf{H}}^T\hat{\mathbf{H}} \right )^{-1}(\hat{\mathbf{H}}^T B\cdot \mathbf{T})  $
+% \STATE \hspace{0.5cm}\textbf{return}  $\textbf{W},  \beta $
+% \STATE 
+% \STATE {\textsc{PREDICT}}$(\mathbf{X} )$
+% \STATE \hspace{0.5cm}$ \mathbf{H} \gets  (\mathbf{X}^T\textbf{W} )/( \mathbb{1}\mathbf{X}  + \mathbb{1}\textbf{W}- \mathbf{X}^T\textbf{W}  ) $
+% \STATE \hspace{0.5cm}\textbf{return}  $\textsc{sign}( \mathbf{H} \beta )$
+% \end{algorithmic}
+% \label{alg1}
+% \end{algorithm}
+
+% Que sunt eum lam eos si dic to estist, culluptium quid qui nestrum nobis reiumquiatur minimus minctem. Ro moluptat fuga. Itatquiam ut laborpo rersped exceres vollandi repudaerem. Ulparci sunt, qui doluptaquis sumquia ndestiu sapient iorepella sunti veribus. Ro moluptat fuga. Itatquiam ut laborpo rersped exceres vollandi repudaerem. 
+% \section{Mathematical Typography \\ and Why It Matters}
+
+% Typographical conventions for mathematical formulas have been developed to {\bf provide uniformity and clarity of presentation across mathematical texts}. This enables the readers of those texts to both understand the author's ideas and to grasp new concepts quickly. While software such as \LaTeX \ and MathType\textsuperscript{\textregistered} can produce aesthetically pleasing math when used properly, it is also very easy to misuse the software, potentially resulting in incorrect math display.
+
+% IEEE aims to provide authors with the proper guidance on mathematical typesetting style and assist them in writing the best possible article. As such, IEEE has assembled a set of examples of good and bad mathematical typesetting \cite{ref1,ref2,ref3,ref4,ref5}. 
+
+% Further examples can be found at \url{http://journals.ieeeauthorcenter.ieee.org/wp-content/uploads/sites/7/IEEE-Math-Typesetting-Guide-for-LaTeX-Users.pdf}
+
+% \subsection{Display Equations}
+% The simple display equation example shown below uses the ``equation'' environment. To number the equations, use the $\backslash${\tt{label}} macro to create an identifier for the equation. LaTeX will automatically number the equation for you.
+% \begin{equation}
+% \label{deqn_ex1}
+% x = \sum_{i=0}^{n} 2{i} Q.
+% \end{equation}
+
+% \noindent is coded as follows:
+% \begin{verbatim}
+% \begin{equation}
+% \label{deqn_ex1}
+% x = \sum_{i=0}^{n} 2{i} Q.
+% \end{equation}
+% \end{verbatim}
+
+% To reference this equation in the text use the $\backslash${\tt{ref}} macro. 
+% Please see (\ref{deqn_ex1})\\
+% \noindent is coded as follows:
+% \begin{verbatim}
+% Please see (\ref{deqn_ex1})\end{verbatim}
+
+% \subsection{Equation Numbering}
+% {\bf{Consecutive Numbering:}} Equations within an article are numbered consecutively from the beginning of the
+% article to the end, i.e., (1), (2), (3), (4), (5), etc. Do not use roman numerals or section numbers for equation numbering.
+
+% \noindent {\bf{Appendix Equations:}} The continuation of consecutively numbered equations is best in the Appendix, but numbering
+%  as (A1), (A2), etc., is permissible.\\
+
+% \noindent {\bf{Hyphens and Periods}}: Hyphens and periods should not be used in equation numbers, i.e., use (1a) rather than
+% (1-a) and (2a) rather than (2.a) for subequations. This should be consistent throughout the article.
+
+% \subsection{Multi-Line Equations and Alignment}
+% Here we show several examples of multi-line equations and proper alignments.
+
+% \noindent {\bf{A single equation that must break over multiple lines due to length with no specific alignment.}}
+% \begin{multline}
+% \text{The first line of this example}\\
+% \text{The second line of this example}\\
+% \text{The third line of this example}
+% \end{multline}
+
+% \noindent is coded as:
+% \begin{verbatim}
+% \begin{multline}
+% \text{The first line of this example}\\
+% \text{The second line of this example}\\
+% \text{The third line of this example}
+% \end{multline}
+% \end{verbatim}
+
+% \noindent {\bf{A single equation with multiple lines aligned at the = signs}}
+% \begin{align}
+% a &= c+d \\
+% b &= e+f
+% \end{align}
+% \noindent is coded as:
+% \begin{verbatim}
+% \begin{align}
+% a &= c+d \\
+% b &= e+f
+% \end{align}
+% \end{verbatim}
+
+% The {\tt{align}} environment can align on multiple  points as shown in the following example:
+% \begin{align}
+% x &= y & X & =Y & a &=bc\\
+% x' &= y' & X' &=Y' &a' &=bz
+% \end{align}
+% \noindent is coded as:
+% \begin{verbatim}
+% \begin{align}
+% x &= y & X & =Y & a &=bc\\
+% x' &= y' & X' &=Y' &a' &=bz
+% \end{align}
+% \end{verbatim}
+
+
+
+
+
+% \subsection{Subnumbering}
+% The amsmath package provides a {\tt{subequations}} environment to facilitate subnumbering. An example:
+
+% \begin{subequations}\label{eq:2}
+% \begin{align}
+% f&=g \label{eq:2A}\\
+% f' &=g' \label{eq:2B}\\
+% \mathcal{L}f &= \mathcal{L}g \label{eq:2c}
+% \end{align}
+% \end{subequations}
+
+% \noindent is coded as:
+% \begin{verbatim}
+% \begin{subequations}\label{eq:2}
+% \begin{align}
+% f&=g \label{eq:2A}\\
+% f' &=g' \label{eq:2B}\\
+% \mathcal{L}f &= \mathcal{L}g \label{eq:2c}
+% \end{align}
+% \end{subequations}
+
+% \end{verbatim}
+
+% \subsection{Matrices}
+% There are several useful matrix environments that can save you some keystrokes. See the example coding below and the output.
+
+% \noindent {\bf{A simple matrix:}}
+% \begin{equation}
+% \begin{matrix}  0 &  1 \\ 
+% 1 &  0 \end{matrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{matrix}  0 &  1 \\ 
+% 1 &  0 \end{matrix}
+% \end{equation}
+% \end{verbatim}
+
+% \noindent {\bf{A matrix with parenthesis}}
+% \begin{equation}
+% \begin{pmatrix} 0 & -i \\
+%  i &  0 \end{pmatrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{pmatrix} 0 & -i \\
+%  i &  0 \end{pmatrix}
+% \end{equation}
+% \end{verbatim}
+
+% \noindent {\bf{A matrix with square brackets}}
+% \begin{equation}
+% \begin{bmatrix} 0 & -1 \\ 
+% 1 &  0 \end{bmatrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{bmatrix} 0 & -1 \\ 
+% 1 &  0 \end{bmatrix}
+% \end{equation}
+% \end{verbatim}
+
+% \noindent {\bf{A matrix with curly braces}}
+% \begin{equation}
+% \begin{Bmatrix} 1 &  0 \\ 
+% 0 & -1 \end{Bmatrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{Bmatrix} 1 &  0 \\ 
+% 0 & -1 \end{Bmatrix}
+% \end{equation}\end{verbatim}
+
+% \noindent {\bf{A matrix with single verticals}}
+% \begin{equation}
+% \begin{vmatrix} a &  b \\ 
+% c &  d \end{vmatrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{vmatrix} a &  b \\ 
+% c &  d \end{vmatrix}
+% \end{equation}\end{verbatim}
+
+% \noindent {\bf{A matrix with double verticals}}
+% \begin{equation}
+% \begin{Vmatrix} i &  0 \\ 
+% 0 & -i \end{Vmatrix}
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \begin{Vmatrix} i &  0 \\ 
+% 0 & -i \end{Vmatrix}
+% \end{equation}\end{verbatim}
+
+% \subsection{Arrays}
+% The {\tt{array}} environment allows you some options for matrix-like equations. You will have to manually key the fences, but there are other options for alignment of the columns and for setting horizontal and vertical rules. The argument to {\tt{array}} controls alignment and placement of vertical rules.
+
+% A simple array
+% \begin{equation}
+% \left(
+% \begin{array}{cccc}
+% a+b+c & uv & x-y & 27\\
+% a+b & u+v & z & 134
+% \end{array}\right)
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \left(
+% \begin{array}{cccc}
+% a+b+c & uv & x-y & 27\\
+% a+b & u+v & z & 134
+% \end{array} \right)
+% \end{equation}
+% \end{verbatim}
+
+% A slight variation on this to better align the numbers in the last column
+% \begin{equation}
+% \left(
+% \begin{array}{cccr}
+% a+b+c & uv & x-y & 27\\
+% a+b & u+v & z & 134
+% \end{array}\right)
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \left(
+% \begin{array}{cccr}
+% a+b+c & uv & x-y & 27\\
+% a+b & u+v & z & 134
+% \end{array} \right)
+% \end{equation}
+% \end{verbatim}
+
+% An array with vertical and horizontal rules
+% \begin{equation}
+% \left( \begin{array}{c|c|c|r}
+% a+b+c & uv & x-y & 27\\ \hline
+% a+b & u+v & z & 134
+% \end{array}\right)
+% \end{equation}
+% is coded as:
+% \begin{verbatim}
+% \begin{equation}
+% \left(
+% \begin{array}{c|c|c|r}
+% a+b+c & uv & x-y & 27\\
+% a+b & u+v & z & 134
+% \end{array} \right)
+% \end{equation}
+% \end{verbatim}
+% Note the argument now has the pipe "$\vert$" included to indicate the placement of the vertical rules.
+
+
+% \subsection{Cases Structures}
+% Many times cases can be miscoded using the wrong environment, i.e., {\tt{array}}. Using the {\tt{cases}} environment will save keystrokes (from not having to type the $\backslash${\tt{left}}$\backslash${\tt{lbrace}}) and automatically provide the correct column alignment.
+% \begin{equation*}
+% {z_m(t)} = \begin{cases}
+% 1,&{\text{if}}\ {\beta }_m(t) \\ 
+% {0,}&{\text{otherwise.}} 
+% \end{cases}
+% \end{equation*}
+% \noindent is coded as follows:
+% \begin{verbatim}
+% \begin{equation*}
+% {z_m(t)} = 
+% \begin{cases}
+% 1,&{\text{if}}\ {\beta }_m(t),\\ 
+% {0,}&{\text{otherwise.}} 
+% \end{cases}
+% \end{equation*}
+% \end{verbatim}
+% \noindent Note that the ``\&'' is used to mark the tabular alignment. This is important to get  proper column alignment. Do not use $\backslash${\tt{quad}} or other fixed spaces to try and align the columns. Also, note the use of the $\backslash${\tt{text}} macro for text elements such as ``if'' and ``otherwise.''
+
+% \subsection{Function Formatting in Equations}
+% Often, there is an easy way to properly format most common functions. Use of the $\backslash$ in front of the function name will in most cases, provide the correct formatting. When this does not work, the following example provides a solution using the $\backslash${\tt{text}} macro:
+
+% \begin{equation*} 
+%   d_{R}^{KM} = \underset {d_{l}^{KM}} {\text{arg min}} \{ d_{1}^{KM},\ldots,d_{6}^{KM}\}.
+% \end{equation*}
+
+% \noindent is coded as follows:
+% \begin{verbatim}
+% \begin{equation*} 
+%  d_{R}^{KM} = \underset {d_{l}^{KM}} 
+%  {\text{arg min}} \{ d_{1}^{KM},
+%  \ldots,d_{6}^{KM}\}.
+% \end{equation*}
+% \end{verbatim}
+
+% \subsection{ Text Acronyms Inside Equations}
+% This example shows where the acronym ``MSE" is coded using $\backslash${\tt{text\{\}}} to match how it appears in the text.
+
+% \begin{equation*}
+%  \text{MSE} = \frac {1}{n}\sum _{i=1}^{n}(Y_{i} - \hat {Y_{i}})^{2}
+% \end{equation*}
+
+% \begin{verbatim}
+% \begin{equation*}
+%  \text{MSE} = \frac {1}{n}\sum _{i=1}^{n}
+% (Y_{i} - \hat {Y_{i}})^{2}
+% \end{equation*}
+% \end{verbatim}
+
+% \section{Conclusion}
+% The conclusion goes here.
+
+
+% \section*{Acknowledgments}
+% This should be a simple paragraph before the References to thank those individuals and institutions who have supported your work on this article.
+
+
+
+% {\appendix[Proof of the Zonklar Equations]
+% Use $\backslash${\tt{appendix}} if you have a single appendix:
+% Do not use $\backslash${\tt{section}} anymore after $\backslash${\tt{appendix}}, only $\backslash${\tt{section*}}.
+% If you have multiple appendixes use $\backslash${\tt{appendices}} then use $\backslash${\tt{section}} to start each appendix.
+% You must declare a $\backslash${\tt{section}} before using any $\backslash${\tt{subsection}} or using $\backslash${\tt{label}} ($\backslash${\tt{appendices}} by itself
+%  starts a section numbered zero.)}
+
+
+
+% %{\appendices
+% %\section*{Proof of the First Zonklar Equation}
+% %Appendix one text goes here.
+% % You can choose not to have a title for an appendix if you want by leaving the argument blank
+% %\section*{Proof of the Second Zonklar Equation}
+% %Appendix two text goes here.}
+
+
+
+% \section{References Section}
+% You can use a bibliography generated by BibTeX as a .bbl file.
+%  BibTeX documentation can be easily obtained at:
+%  http://mirror.ctan.org/biblio/bibtex/contrib/doc/
+%  The IEEEtran BibTeX style support page is:
+%  http://www.michaelshell.org/tex/ieeetran/bibtex/
+ 
+%  % argument is your BibTeX string definitions and bibliography database(s)
+% %\bibliography{IEEEabrv,../bib/paper}
+% %
+% \section{Simple References}
+% You can manually copy in the resultant .bbl file and set second argument of $\backslash${\tt{begin}} to the number of references
+%  (used to reserve space for the reference number labels box).
+
+% \begin{thebibliography}{1}
+% \bibliographystyle{IEEEtran}
+
+% \bibitem{ref1}
+% {\it{Mathematics Into Type}}. American Mathematical Society. [Online]. Available: https://www.ams.org/arc/styleguide/mit-2.pdf
+
+% \bibitem{ref2}
+% T. W. Chaundy, P. R. Barrett and C. Batey, {\it{The Printing of Mathematics}}. London, U.K., Oxford Univ. Press, 1954.
+
+% \bibitem{ref3}
+% F. Mittelbach and M. Goossens, {\it{The \LaTeX Companion}}, 2nd ed. Boston, MA, USA: Pearson, 2004.
+
+% \bibitem{ref4}
+% G. Gr\"atzer, {\it{More Math Into LaTeX}}, New York, NY, USA: Springer, 2007.
+
+% \bibitem{ref5}M. Letourneau and J. W. Sharp, {\it{AMS-StyleGuide-online.pdf,}} American Mathematical Society, Providence, RI, USA, [Online]. Available: http://www.ams.org/arc/styleguide/index.html
+
+% \bibitem{ref6}
+% H. Sira-Ramirez, ``On the sliding mode control of nonlinear systems,'' \textit{Syst. Control Lett.}, vol. 19, pp. 303--312, 1992.
+
+% \bibitem{ref7}
+% A. Levant, ``Exact differentiation of signals with unbounded higher derivatives,''  in \textit{Proc. 45th IEEE Conf. Decis.
+% Control}, San Diego, CA, USA, 2006, pp. 5585--5590. DOI: 10.1109/CDC.2006.377165.
+
+% \bibitem{ref8}
+% M. Fliess, C. Join, and H. Sira-Ramirez, ``Non-linear estimation is easy,'' \textit{Int. J. Model., Ident. Control}, vol. 4, no. 1, pp. 12--27, 2008.
+
+% \bibitem{ref9}
+% R. Ortega, A. Astolfi, G. Bastin, and H. Rodriguez, ``Stabilization of food-chain systems using a port-controlled Hamiltonian description,'' in \textit{Proc. Amer. Control Conf.}, Chicago, IL, USA,
+% 2000, pp. 2245--2249.
+
+% \end{thebibliography}
+
+
+% \newpage
+
+% \section{Biography Section}
+% If you have an EPS/PDF photo (graphicx package needed), extra braces are
+%  needed around the contents of the optional argument to biography to prevent
+%  the LaTeX parser from getting confused when it sees the complicated
+%  $\backslash${\tt{includegraphics}} command within an optional argument. (You can create
+%  your own custom macro containing the $\backslash${\tt{includegraphics}} command to make things
+%  simpler here.)
+ 
+% \vspace{11pt}
+
+% \bf{If you include a photo:}\vspace{-33pt}
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{fig1}}]{Michael Shell}
+% Use $\backslash${\tt{begin\{IEEEbiography\}}} and then for the 1st argument use $\backslash${\tt{includegraphics}} to declare and link the author photo.
+% Use the author name as the 3rd argument followed by the biography text.
+% \end{IEEEbiography}
+
+% \vspace{11pt}
+
+% \bf{If you will not include a photo:}\vspace{-33pt}
+% \begin{IEEEbiographynophoto}{John Doe}
+% Use $\backslash${\tt{begin\{IEEEbiographynophoto\}}} and the author name as the argument followed by the biography text.
+% \end{IEEEbiographynophoto}
+
+
+
+
+% \vfill
+
+\end{document}
+
