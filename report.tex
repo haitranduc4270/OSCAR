@@ -304,7 +304,7 @@ Pathway coherence was assessed by Enrichr over-representation on these gene list
 
 \begin{figure*}[htbp]
     \centering
-    \includegraphics[width=1\textwidth]{OSCAR_Lollipop_Scientific_Edition_7_2.png} 
+    \includegraphics[width=0.95\textwidth]{OSCAR_Lollipop_Scientific_Edition.png} 
     \caption{Five-fold consensus input-gradient features across BRCA subtypes (mRNA, CNV, and proteomics; color encodes omic).
     Panel order follows subtype indices: \textbf{(A)} Luminal~A, \textbf{(B)} Luminal~B, \textbf{(C)} Basal-like, and \textbf{(D)} HER2-enriched.
     Mitotic and 17q12 genes that match known subtype programs are interpreted in the text as a consistency check~\cite{Gao2018LuminalA,Ades2014LuminalB,PerezPena2017MitoticLumA,Malorni2016RBsig,Staaf2010HER2,Kao2006Amplicon,Sahlberg2013HER2Amplicon}.
@@ -315,7 +315,7 @@ Pathway coherence was assessed by Enrichr over-representation on these gene list
 
 \begin{figure*}[htbp]
     \centering
-    \includegraphics[width=0.98\textwidth]{img/cohens_d_by_subtype.png}
+    \includegraphics[width=0.92\textwidth]{cohens_d_by_subtype.png}
     \caption{One-versus-rest Cohen's $d$ for the $51$ consensus features.
     Filled markers pass $q<0.05$ and $|d|\ge 0.3$; open markers are gradient-stable but do not pass differential abundance.
     Panel order matches Fig.~\ref{fig:combined_saliency}.}
@@ -388,7 +388,7 @@ GO:BP & Mitotic spindle organization & 4/90 & $4.1\times 10^{-5}$ \\
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=\linewidth]{img/cnv_mrna_concordance_her2.png}
+    \includegraphics[width=\linewidth]{cnv_mrna_concordance_her2.png}
     \caption{HER2-enriched consensus genes present in both CNV and mRNA. Both layers are higher than the rest of the cohort, consistent with cis-acting 17q12 amplification \cite{Pollack2002Cis,Staaf2010HER2}.}
     \label{fig:her2_concordance}
 \end{figure}
@@ -429,7 +429,7 @@ Removing the gate lowers accuracy (Table~\ref{tab:ablation_components}).
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=\linewidth]{img/gate_by_subtype.png}
+    \includegraphics[width=\linewidth]{gate_by_subtype.png}
     \caption{BRCA gated fusion on validation folds. Points are means across five folds and whiskers are the corresponding standard deviations.
     The axis is focused around $0.5$, the value at which the raw latent and the ordered-cross-attention latent are weighted equally.}
     \label{fig:gates}
@@ -437,9 +437,17 @@ Removing the gate lowers accuracy (Table~\ref{tab:ablation_components}).
 
 \section{Conclusions and Discussions}
 
-OSCAR implements the regulatory order CNV $\rightarrow$ mRNA $\rightarrow$ RPPA in cross-attention. On BRCA, LUNG, and COADREAD the model reaches 91.27\%, 96.71\%, and 92.34\% accuracy, exceeding MoGCN \cite{MoGCN2022}, MOGONET \cite{MOGONET2021}, and MoxGATE \cite{MoxGATE2023}. The same order outperforms reverse and mixed attention (Table \ref{tab:ablation_order}). On BRCA the gate remains approximately $0.5$ for every subtype (Fig.~\ref{fig:gates}). BRCA input gradients are the consistency check in Section~III.
+In this study, we proposed OSCAR (Order-aware Self-Cross Attention Representation), a hierarchical deep learning framework for multi-omic cancer subtype classification that incorporates the biological information flow from genomics (CNV) to transcriptomics (mRNA) and proteomics (RPPA). Unlike conventional multi-omic integration approaches that treat different modalities as symmetric or parallel inputs, OSCAR employs ordered cross-attention to model interactions between successive omic layers, gated fusion to balance modality-specific and cross-omic representations, and self-attention to integrate the resulting omic representations for classification.
 
-Class imbalance is still unresolved. Luminal~A is 48.5\% of BRCA and HER2-enriched is 10.4\% (Table \ref{tab:dataset_summary}). Replacing cross-entropy with focal loss \cite{FocalLoss2017} at $\gamma \in \{0.5, 2, 5\}$ raised recall on the minority class and lowered precision on Luminal~A and Luminal~B, so the reported model keeps cross-entropy. Later work can place DNA methylation at the start of the hierarchy and extend the task from subtype classification to survival.
+Experimental evaluations on three TCGA cohorts demonstrated the effectiveness of the proposed framework. Under stratified five-fold cross-validation, OSCAR achieved accuracies of 91.27\%, 96.71\%, and 92.34\% on BRCA, LUNG, and COADREAD, respectively, with corresponding F1 scores of 91.36\%, 96.76\%, and 93.14\%. OSCAR outperformed the evaluated graph-based and attention-based baselines across all three cohorts. The improvement was particularly notable on BRCA, where the proposed method achieved an accuracy of 91.27\%, compared with 89.73\% for MoxGATE, 88.54\% for moBRCA-net, and 86.91\% for MoGCN. These results suggest that explicitly incorporating an ordered cross-omic inductive bias can improve subtype discrimination, particularly in heterogeneous cancer cohorts. Nevertheless, the relatively small performance margins on COADREAD, together with the fold-to-fold variability, indicate that the magnitude of improvement differs across datasets and should be interpreted in the context of the experimental evaluation.
+
+The ablation experiments further clarified the contributions of individual architectural components. Removing self-attention reduced accuracy from 91.27\% to 87.12\% on BRCA, from 96.71\% to 94.88\% on LUNG, and from 92.34\% to 90.45\% on COADREAD. Replacing gated fusion with a linear projection also decreased accuracy across all three cohorts. Furthermore, the ordered cross-attention experiments consistently favored the biological sequence CNV $\rightarrow$ mRNA $\rightarrow$ RPPA over the alternative mixed and reverse orderings. On BRCA, reversing the sequence reduced accuracy by approximately 4.83 percentage points, from 91.27\% to 86.44\%. Collectively, these findings support the utility of both cross-omic ordering and subsequent token-level integration within OSCAR. However, the ordering experiments establish the predictive value of this architectural choice rather than demonstrating that the model has learned causal regulatory relationships between omic layers.
+
+The interpretability analysis on BRCA provided an additional biological consistency check. Cross-fold input-gradient saliency identified features associated with established subtype-specific molecular programs. For Luminal A and Luminal B tumors, the consensus features were enriched for cell-cycle and mitotic processes, consistent with differences in proliferative activity between these subtypes. For HER2-enriched tumors, several CNV and mRNA features within the 17q12/\textit{ERBB2} amplicon neighborhood showed concordant increases, supporting the consistency of the model's feature rankings with known molecular characteristics. The Basal-like feature profile was more heterogeneous, reflecting a mixture of signals rather than a single dominant program. The analysis also identified \textit{TBC1D31} and \textit{GAS2L3} as additional high-ranking features that may warrant further investigation. Importantly, gradient saliency identifies features used by the trained classifier; it does not establish directional regulation, causal cross-omic effects, or novel clinical biomarkers. Independent validation is therefore necessary before these additional candidates can be assigned biomarker significance.
+
+
+
+
 
 
 % \section*{References}
