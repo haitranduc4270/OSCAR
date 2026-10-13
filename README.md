@@ -1,6 +1,10 @@
-# Cancer Multi-Omics Experiment
+# Order-aware Self-Cross Attention Representation Learning for Multi-omic Cancer Subtype Classification
 
-Train multi-omics classification models (self-attention + cross-attention fusion) with PyTorch Lightning.
+- Proposes OSCAR for order-aware multi-omic cancer subtype classification.
+- Models CNV–mRNA–RPPA relationships using ordered cross-attention.
+- Integrates omic representations through gated fusion and self-attention.
+- Achieves accuracies of 91.27%, 96.71%, and 92.34% across three TCGA cohorts.
+- Identifies subtype-associated molecular features through gradient-based attribution.
 
 ## Setup
 
