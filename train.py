@@ -3,6 +3,7 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, Callback
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from datamodule import BRCADataModule
 from models.self_attn_fusion import SelfAttentionFusionModel
+from models.moxgate import MoXGATEModel
 import yaml
 import argparse
 import os
@@ -11,6 +12,53 @@ import gc
 import torch
 import numpy as np
 import random
+
+
+def build_model(cfg, dm):
+    """Instantiate model from config + datamodule feature dims."""
+    model_cfg = cfg.get("model", {})
+    model_name = model_cfg.get("name") or model_cfg.get("type")
+    input_dims = (
+        dm.feature_dims if model_cfg.get("input_dims") is None else model_cfg["input_dims"]
+    )
+    train_cfg = cfg.get("train", {})
+
+    if model_name == "self_attn_fusion":
+        return SelfAttentionFusionModel(
+            input_dims=input_dims,
+            num_classes=model_cfg["num_classes"],
+            latent_dim=model_cfg.get("latent_dim", 128),
+            encoder_hidden_dim=model_cfg.get("hidden_dim", 512),
+            fusion_hidden=model_cfg.get("fusion_hidden", 256),
+            dropout=model_cfg.get("dropout", 0.3),
+            lr=float(train_cfg.get("lr", 1e-4)),
+            weight_decay=float(train_cfg.get("weight_decay", 1e-5)),
+            n_heads=model_cfg.get("n_heads", 4),
+            n_layers=model_cfg.get("n_layers", 2),
+            fusion_type=model_cfg.get("fusion_type", "attention"),
+            use_cross_attention=model_cfg.get("use_cross_attention", False),
+            cross_attn_hidden=model_cfg.get("cross_attn_hidden", 128),
+            use_original_for_proteomics=model_cfg.get("use_original_for_proteomics", True),
+            use_gated_fusion=model_cfg.get("use_gated_fusion", False),
+            gated_fusion_hidden=model_cfg.get("gated_fusion_hidden", 128),
+        )
+    if model_name == "moxgate":
+        return MoXGATEModel(
+            input_dims=input_dims,
+            num_classes=model_cfg["num_classes"],
+            latent_dim=model_cfg.get("latent_dim", 128),
+            encoder_hidden_dim=model_cfg.get("hidden_dim", 512),
+            fusion_hidden=model_cfg.get("fusion_hidden", 256),
+            dropout=model_cfg.get("dropout", 0.3),
+            lr=float(train_cfg.get("lr", 1e-4)),
+            weight_decay=float(train_cfg.get("weight_decay", 1e-5)),
+            n_heads=model_cfg.get("n_heads", 8),
+            joint_n_heads=model_cfg.get("joint_n_heads", 8),
+            use_focal_loss=model_cfg.get("use_focal_loss", True),
+            focal_gamma=model_cfg.get("focal_gamma", 2.0),
+            modality_balance_weight=model_cfg.get("modality_balance_weight", 0.0),
+        )
+    raise ValueError(f"Unknown model: {model_name}")
 
 
 class ValAccAtBestF1Callback(Callback):
@@ -249,28 +297,7 @@ def main(config_path):
             # so we can build models that depend on input sizes dynamically.
             dm.setup(stage="fit")
 
-            model_name = cfg.get("model", {}).get("name") or cfg.get("model", {}).get("type")
-            if model_name == "self_attn_fusion":
-                model = SelfAttentionFusionModel(
-                    input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                    num_classes=cfg["model"]["num_classes"],
-                    latent_dim=cfg["model"].get("latent_dim", 128),
-                    encoder_hidden_dim=cfg["model"].get("hidden_dim", 512),
-                    fusion_hidden=cfg["model"].get("fusion_hidden", 256),
-                    dropout=cfg["model"].get("dropout", 0.3),
-                    lr=float(cfg["train"].get("lr", 1e-4)),
-                    weight_decay=float(cfg["train"].get("weight_decay", 1e-5)),
-                    n_heads=cfg["model"].get("n_heads", 4),
-                    n_layers=cfg["model"].get("n_layers", 2),
-                    fusion_type=cfg["model"].get("fusion_type", "attention"),
-                    use_cross_attention=cfg["model"].get("use_cross_attention", False),
-                    cross_attn_hidden=cfg["model"].get("cross_attn_hidden", 128),
-                    use_original_for_proteomics=cfg["model"].get("use_original_for_proteomics", True),
-                    use_gated_fusion=cfg["model"].get("use_gated_fusion", False),
-                    gated_fusion_hidden=cfg["model"].get("gated_fusion_hidden", 128),
-                )
-            else:
-                raise ValueError(f"Unknown model: {model_name}")
+            model = build_model(cfg, dm)
 
             val_acc_at_best_f1_cb = ValAccAtBestF1Callback()
             callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=fold)
@@ -367,28 +394,7 @@ def main(config_path):
         # Ensure datamodule is set up to expose feature dimensions before building model
         dm.setup(stage="fit")
 
-        model_name = cfg.get("model", {}).get("name") or cfg.get("model", {}).get("type")
-        if model_name == "self_attn_fusion":
-            model = SelfAttentionFusionModel(
-                input_dims=dm.feature_dims if cfg["model"].get("input_dims") is None else cfg["model"]["input_dims"],
-                num_classes=cfg["model"]["num_classes"],
-                latent_dim=cfg["model"].get("latent_dim", 128),
-                encoder_hidden_dim=cfg["model"].get("hidden_dim", 512),
-                fusion_hidden=cfg["model"].get("fusion_hidden", 256),
-                dropout=cfg["model"].get("dropout", 0.3),
-                lr=float(cfg["train"].get("lr", 1e-4)),
-                weight_decay=float(cfg["train"].get("weight_decay", 1e-5)),
-                n_heads=cfg["model"].get("n_heads", 4),
-                n_layers=cfg["model"].get("n_layers", 2),
-                fusion_type=cfg["model"].get("fusion_type", "attention"),
-                use_cross_attention=cfg["model"].get("use_cross_attention", False),
-                cross_attn_hidden=cfg["model"].get("cross_attn_hidden", 128),
-                use_original_for_proteomics=cfg["model"].get("use_original_for_proteomics", True),
-                use_gated_fusion=cfg["model"].get("use_gated_fusion", False),
-                gated_fusion_hidden=cfg["model"].get("gated_fusion_hidden", 128),
-            )
-        else:
-            raise ValueError(f"Unknown model: {model_name}")
+        model = build_model(cfg, dm)
 
         val_acc_at_best_f1_cb = ValAccAtBestF1Callback()
         callbacks, checkpoint_callbacks, early_stop_callback = build_trainer_callbacks(cfg, fold=None)
