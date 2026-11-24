@@ -45,10 +45,11 @@ OUT_DIR = Path("lightning_logs/baselines_matched")
 
 def _metrics(logits: torch.Tensor, y: np.ndarray) -> dict:
     preds = logits.argmax(dim=-1).detach().cpu().numpy()
+    label_ids = list(range(logits.shape[-1]))
     return {
-        "f1_macro": float(f1_score(y, preds, average="macro")),
+        "f1_macro": float(f1_score(y, preds, average="macro", labels=label_ids)),
         "accuracy": float(accuracy_score(y, preds)),
-        "f1_per_class": f1_score(y, preds, average=None).tolist(),
+        "f1_per_class": f1_score(y, preds, average=None, labels=label_ids).tolist(),
     }
 
 
@@ -96,6 +97,8 @@ def _run_batch_model_fold(
     def run_epoch(model, loader, opt):
         model.train()
         for mrna, cnv, prot, y in loader:
+            if mrna.shape[0] < 2:  # BatchNorm (moBRCA-net) needs >1 sample in train mode
+                continue
             opt.zero_grad(set_to_none=True)
             logits = model({"mRNA": mrna.to(device), "CNV": cnv.to(device), "Proteomics": prot.to(device)})
             loss = F.cross_entropy(logits, y.to(device))
@@ -265,12 +268,19 @@ def _run_mogonet_fold(fold: dict, num_classes: int, device: torch.device, max_ep
     return {"chosen_epoch": best_epoch, "inner_val_f1_macro": best_f1, "test": test_m}
 
 
+MOXGATE_CONFIGS = {
+    "BRCA": "configs/config_moxgate_brca.yaml",
+    "LUNG": "configs/config_moxgate_lung.yaml",
+    "COADREAD": "configs/config_moxgate_crc.yaml",
+}
+
+
 def run_baseline_on_cohort(cohort_name: str, model_name: str, folds: list[dict], dims: dict[str, int], num_classes: int, device: torch.device) -> dict:
     rows = []
     for fold_id, fold in enumerate(folds, start=1):
         if model_name == "moxgate":
-            cfg = yaml.safe_load(open("configs/config_moxgate_brca.yaml"))
-            cfg["model"]["num_classes"] = num_classes
+            cfg = yaml.safe_load(open(MOXGATE_CONFIGS[cohort_name]))
+            assert int(cfg["model"]["num_classes"]) == num_classes, f"{cohort_name} moxgate num_classes mismatch"
             row = run_moxgate_fold(cfg, dims, fold, device, MATCHED_MAX_EPOCHS)
         elif model_name == "mot":
             row = _run_batch_model_fold(fold, device, lambda d: MOTModel(d, num_classes), lr=2e-4, weight_decay=1e-4)

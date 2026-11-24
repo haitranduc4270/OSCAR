@@ -125,15 +125,18 @@ def evaluate(model, loader, device) -> dict:
         seen += y.shape[0]
         logits.append(batch_logits.detach().cpu())
         labels.append(y.detach().cpu())
+    all_logits = torch.cat(logits)
     y_true = torch.cat(labels).numpy()
-    y_pred = torch.cat(logits).argmax(dim=1).numpy()
-    per_class = f1_score(y_true, y_pred, average=None, labels=[0, 1, 2, 3])
+    y_pred = all_logits.argmax(dim=1).numpy()
+    n_cls = all_logits.shape[1]  # label set follows the model head (LUNG=2, BRCA/CRC=4)
+    label_ids = list(range(n_cls))
+    per_class = f1_score(y_true, y_pred, average=None, labels=label_ids)
     return {
         "loss": total / seen,
         "accuracy": float(accuracy_score(y_true, y_pred)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro", labels=[0, 1, 2, 3])),
+        "f1_macro": float(f1_score(y_true, y_pred, average="macro", labels=label_ids)),
         "f1_per_class": [float(value) for value in per_class],
-        "support": np.bincount(y_true, minlength=4).tolist(),
+        "support": np.bincount(y_true, minlength=n_cls).tolist(),
     }
 
 
