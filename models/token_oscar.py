@@ -17,7 +17,7 @@ class OmicToTokens(nn.Module):
     def __init__(
         self,
         input_dim: int,
-        num_tokens: int = 128,
+        num_tokens: int = 256,
         token_dim: int = 32,
         d_mid: int = 256,
         dropout: float = 0.4,
@@ -92,7 +92,7 @@ class TokenOSCARModel(BaseLightningModel):
         self,
         input_dims: dict[str, int],
         num_classes: int,
-        num_tokens: int = 128,
+        num_tokens: int = 256,
         token_dim: int = 32,
         d_mid: int = 256,
         n_heads: int = 4,

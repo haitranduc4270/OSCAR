@@ -3,7 +3,7 @@
 - Proposes OSCAR for order-aware multi-omic cancer subtype classification.
 - Models CNV–mRNA–RPPA relationships using ordered cross-attention.
 - Integrates omic representations through gated fusion and self-attention.
-- **TokenOSCAR** keeps each omic as a `128 × 32` token sequence through ordered cross-attention (`128 × 128`), gated fusion, and self-attention fusion. Under the matched 5-fold protocol below it reaches **88.73%** F1 on BRCA, **96.17%** on LUNG, and **90.25%** on COADREAD.
+- **TokenOSCAR** keeps each omic as a `256 × 32` token sequence through ordered cross-attention (`256 × 256`), gated fusion, and self-attention fusion. Under the matched 5-fold protocol below it reaches **89.31%** F1 on BRCA, **94.70%** on LUNG, and **91.34%** on COADREAD.
 - Identifies subtype-associated molecular features through gradient-based attribution.
 
 ## Setup
@@ -89,7 +89,7 @@ Known limitations:
 
 | Method | BRCA F1 / Acc | LUNG F1 / Acc | COADREAD F1 / Acc |
 |--------|---------------|---------------|-------------------|
-| **TokenOSCAR (128×32)** | **88.73±3.07 / 90.61±1.81** | **96.17±1.08 / 96.19±1.08** | 90.25±2.47 / 91.89±1.12 |
+| **TokenOSCAR (256×32)** | **89.31±2.17 / 91.00±1.69** | 94.70±3.76 / 94.73±3.73 | 91.34±2.55 / 92.33±2.73 |
 | OSCAR (1×128) | 87.01±3.41 / 88.85±2.58 | 95.72±1.70 / 95.75±1.69 | **93.43±2.96 / 94.13±3.09** |
 | MoXGATE (paper) | 86.82±2.69 / 89.23±1.65 | 96.02±0.76 / 96.04±0.75 | 86.09±2.86 / 88.30±2.93 |
 | MOT | 89.28±3.19 / 90.80±2.11 | 95.87±1.52 / 95.90±1.51 | 87.27±2.13 / 90.11±2.19 |

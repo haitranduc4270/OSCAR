@@ -83,8 +83,10 @@ OSCAR_BASELINE = {
 def build_token_oscar(
     oscar_cfg: dict,
     dims: dict[str, int],
-    num_tokens: int = 128,
+    num_tokens: int = 256,
     token_dim: int = 32,
+    d_mid: int = 256,
+    n_heads: int = 4,
 ) -> TokenOSCARModel:
     model_cfg = oscar_cfg["model"]
     train_cfg = oscar_cfg["train"]
@@ -93,8 +95,8 @@ def build_token_oscar(
         num_classes=int(model_cfg["num_classes"]),
         num_tokens=num_tokens,
         token_dim=token_dim,
-        d_mid=256,
-        n_heads=4,
+        d_mid=d_mid,
+        n_heads=n_heads,
         n_layers=int(model_cfg["n_layers"]),
         fusion_hidden=int(model_cfg["fusion_hidden"]),
         dropout=float(model_cfg["dropout"]),
@@ -106,7 +108,14 @@ def build_token_oscar(
     )
 
 
-def run_cohort(cohort_name: str, device: torch.device) -> dict:
+def run_cohort(
+    cohort_name: str,
+    device: torch.device,
+    num_tokens: int = 256,
+    token_dim: int = 32,
+    d_mid: int = 256,
+    n_heads: int = 4,
+) -> dict:
     spec = COHORTS[cohort_name]
     oscar_cfg = yaml.safe_load(open(spec["oscar"]))
     folds_dir = spec["folds"]
@@ -120,9 +129,9 @@ def run_cohort(cohort_name: str, device: torch.device) -> dict:
     }
     folds = [load_fold(folds_dir / f"fold_{i}", reference_columns, prefix) for i in range(1, 6)]
     dims = {name: folds[0]["dev"][name].shape[1] for name in ("mRNA", "CNV", "Proteomics")}
-    print(f"[{cohort_name}] device={device} dims={dims}", flush=True)
+    print(f"[{cohort_name}] device={device} dims={dims} T={num_tokens} M={token_dim} d_mid={d_mid}", flush=True)
 
-    probe = build_token_oscar(oscar_cfg, dims)
+    probe = build_token_oscar(oscar_cfg, dims, num_tokens, token_dim, d_mid, n_heads)
     params = sum(p.numel() for p in probe.parameters())
     del probe
 
@@ -136,7 +145,7 @@ def run_cohort(cohort_name: str, device: torch.device) -> dict:
             fold,
             device,
             MATCHED_MAX_EPOCHS,
-            build=lambda: build_token_oscar(oscar_cfg, dims),
+            build=lambda: build_token_oscar(oscar_cfg, dims, num_tokens, token_dim, d_mid, n_heads),
         )
         if device.type == "cuda":
             row["peak_cuda_mb"] = float(torch.cuda.max_memory_allocated(device) / (1024**2))
@@ -188,6 +197,11 @@ def format_table(cohorts_data: dict[str, dict]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cohort", default="all", help="all or comma-separated BRCA,LUNG,COADREAD")
+    parser.add_argument("--num-tokens", type=int, default=256)
+    parser.add_argument("--token-dim", type=int, default=32)
+    parser.add_argument("--d-mid", type=int, default=256)
+    parser.add_argument("--n-heads", type=int, default=4)
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = parser.parse_args()
 
     configure_runtime()
@@ -198,15 +212,23 @@ def main() -> None:
     else:
         targets = [c.strip().upper() for c in args.cohort.split(",") if c.strip()]
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = OUT_DIR / "report.json"
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = args.out_dir / "report.json"
     cohorts_data: dict[str, dict] = {}
     if report_path.exists():
         cohorts_data = json.load(open(report_path)).get("cohorts", {})
 
     for name in targets:
-        cohorts_data[name] = run_cohort(name, device)
+        cohorts_data[name] = run_cohort(
+            name,
+            device,
+            num_tokens=args.num_tokens,
+            token_dim=args.token_dim,
+            d_mid=args.d_mid,
+            n_heads=args.n_heads,
+        )
 
+    seq_len = 3 * args.num_tokens + 1
     report = {
         "protocol": {
             "inner_val_fraction": 0.2,
@@ -214,13 +236,20 @@ def main() -> None:
             "max_epochs": MATCHED_MAX_EPOCHS,
             "selection": "first maximum of inner validation macro-F1",
             "retrain": "all samples in the fold training file",
-            "architecture": "TokenOSCAR: each omic -> (B, 128, 32) -> 128x128 cross-attn + gate -> 385-token self-attn -> CLS",
+            "num_tokens": args.num_tokens,
+            "token_dim": args.token_dim,
+            "d_mid": args.d_mid,
+            "n_heads": args.n_heads,
+            "architecture": (
+                f"TokenOSCAR: each omic -> (B, {args.num_tokens}, {args.token_dim}) "
+                f"-> {args.num_tokens}x{args.num_tokens} cross-attn + gate -> {seq_len}-token self-attn -> CLS"
+            ),
         },
         "cohorts": cohorts_data,
     }
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     table = format_table(cohorts_data)
-    (OUT_DIR / "table.md").write_text(table, encoding="utf-8")
+    (args.out_dir / "table.md").write_text(table, encoding="utf-8")
     print("\n" + table, flush=True)
     print(f"Saved report to {report_path}", flush=True)
 
