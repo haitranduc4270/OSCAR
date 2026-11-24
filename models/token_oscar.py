@@ -104,6 +104,8 @@ class TokenOSCARModel(BaseLightningModel):
         use_cross_attention: bool = True,
         use_gated_fusion: bool = True,
         use_original_for_proteomics: bool = True,
+        use_self_attention: bool = True,
+        cross_order: tuple[str, str, str] = ("CNV", "mRNA", "Proteomics"),
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
@@ -113,6 +115,8 @@ class TokenOSCARModel(BaseLightningModel):
         self.use_cross_attention = use_cross_attention
         self.use_gated_fusion = use_gated_fusion
         self.use_original_for_proteomics = use_original_for_proteomics
+        self.use_self_attention = use_self_attention
+        self.cross_order = tuple(cross_order)
 
         self.encoders = nn.ModuleDict(
             {
@@ -134,31 +138,36 @@ class TokenOSCARModel(BaseLightningModel):
                 self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout)
                 self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout)
 
-        self.modality_embed = nn.ParameterDict(
-            {
-                name: nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
-                for name in self.valid_omics
-            }
-        )
-        self.cls_token = nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
+        if self.use_self_attention:
+            self.modality_embed = nn.ParameterDict(
+                {
+                    name: nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
+                    for name in self.valid_omics
+                }
+            )
+            self.cls_token = nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
 
-        enc_layer = nn.TransformerEncoderLayer(
-            d_model=token_dim,
-            nhead=n_heads,
-            dim_feedforward=token_dim * 4,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-            norm_first=True,
-        )
-        self.fusion = nn.TransformerEncoder(
-            enc_layer,
-            num_layers=n_layers,
-            norm=nn.LayerNorm(token_dim),
-            enable_nested_tensor=False,
-        )
+            enc_layer = nn.TransformerEncoderLayer(
+                d_model=token_dim,
+                nhead=n_heads,
+                dim_feedforward=token_dim * 4,
+                dropout=dropout,
+                activation="gelu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.fusion = nn.TransformerEncoder(
+                enc_layer,
+                num_layers=n_layers,
+                norm=nn.LayerNorm(token_dim),
+                enable_nested_tensor=False,
+            )
+            clf_in_dim = token_dim
+        else:
+            clf_in_dim = token_dim * len(self.valid_omics)
+
         self.classifier = nn.Sequential(
-            nn.Linear(token_dim, fusion_hidden),
+            nn.Linear(clf_in_dim, fusion_hidden),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(fusion_hidden, num_classes),
@@ -168,23 +177,29 @@ class TokenOSCARModel(BaseLightningModel):
         tokens = {name: self.encoders[name](batch[name]) for name in self.valid_omics}
 
         if self.use_cross_attention:
-            mrna_orig = tokens["mRNA"]
-            prot_orig = tokens["Proteomics"]
+            o1, o2, o3 = self.cross_order
+            o2_orig = tokens[o2]
+            o3_orig = tokens[o3]
 
-            mrna_enh = self.cross_cnv_to_mrna(query=mrna_orig, key_value=tokens["CNV"])
-            tokens["mRNA"] = (
-                self.gate_mrna(mrna_orig, mrna_enh) if self.use_gated_fusion else mrna_enh
+            o2_enh = self.cross_cnv_to_mrna(query=o2_orig, key_value=tokens[o1])
+            tokens[o2] = (
+                self.gate_mrna(o2_orig, o2_enh) if self.use_gated_fusion else o2_enh
             )
 
-            mrna_for_prot = mrna_orig if self.use_original_for_proteomics else tokens["mRNA"]
-            prot_enh = self.cross_mrna_to_prot(query=prot_orig, key_value=mrna_for_prot)
-            tokens["Proteomics"] = (
-                self.gate_prot(prot_orig, prot_enh) if self.use_gated_fusion else prot_enh
+            o2_for_o3 = o2_orig if self.use_original_for_proteomics else tokens[o2]
+            o3_enh = self.cross_mrna_to_prot(query=o3_orig, key_value=o2_for_o3)
+            tokens[o3] = (
+                self.gate_prot(o3_orig, o3_enh) if self.use_gated_fusion else o3_enh
             )
 
-        seq = [tokens[name] + self.modality_embed[name] for name in self.valid_omics]
-        B = seq[0].size(0)
-        cls = self.cls_token.expand(B, -1, -1)
-        all_tokens = torch.cat([cls, *seq], dim=1)  # (B, 1 + 3*T, M)
-        fused = self.fusion(all_tokens)[:, 0]  # CLS token: (B, M)
+        if self.use_self_attention:
+            seq = [tokens[name] + self.modality_embed[name] for name in self.valid_omics]
+            B = seq[0].size(0)
+            cls = self.cls_token.expand(B, -1, -1)
+            all_tokens = torch.cat([cls, *seq], dim=1)  # (B, 1 + 3*T, M)
+            fused = self.fusion(all_tokens)[:, 0]  # CLS token: (B, M)
+        else:
+            fused = torch.cat(
+                [tokens[name].mean(dim=1) for name in self.valid_omics], dim=-1
+            )  # (B, 3*M)
         return self.classifier(fused)
