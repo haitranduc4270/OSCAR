@@ -16,10 +16,6 @@ Thư mục này chứa toàn bộ hình ảnh mới (chú thích tiếng Anh) v�
 - `fig5_3_tokenoscar_cnv_mrna_her2.png` — Thay **Fig 5.3** (đồng thuận CNV vs mRNA trên HER2-enriched).
 - `fig5_4_tokenoscar_gate.png` — Thay **Fig 5.4** (trung bình gate và tỉ lệ phần tử `> 0.5` theo subtype trên tập val).
 
-### `material/token_oscar/` — Hình so sánh baseline & theo fold (3 cohort, tiếng Anh)
-- `fig_proposed_vs_baselines.png` — Macro-F1 (mean ± std, 5 folds) của **Proposed method** so với 5 baseline (`MoXGATE`, `MoGCN`, `MOGONET`, `moBRCA-net`, `DeepMoIC`).
-- `fig_proposed_per_fold.png` — Macro-F1 theo từng fold của **Proposed method** trên BRCA, LUNG, COADREAD.
-
 ### `material/oscar_1x128/` — Hình cũ từ nhánh `draft` (giữ để đối chiếu)
 - `cohens_d_by_subtype.png`, `cnv_mrna_concordance_her2.png`, `gate_by_subtype.png`.
 
