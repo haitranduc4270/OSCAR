@@ -1,0 +1,33 @@
+data:
+  pre_split_fold: csv/processed/BRCA/5-fold/fold_1
+  mrna_stem: BRCA_mRNA
+  cnv_stem: BRCA_CNV_1_channel
+  protein_stem: BRCA_proteomics
+  label_stem: BRCA_label_num
+  hallmark_gmt: resources/msigdb/h.all.v7.4.symbols.gmt
+  seed: 42
+  test_size: 0.2
+  val_fraction_of_remaining: 0.2
+
+model:
+  aggregation: mean
+  num_classes: 4
+  gene_dim: 32
+  token_dim: 64
+  n_heads: 4
+  n_layers: 1
+  dropout: 0.2
+
+train:
+  max_epochs: 120
+  batch_size: 32
+  lr: 3.0e-4
+  weight_decay: 1.0e-3
+  seed: 42
+
+scoring:
+  reference_test_macro_f1: 0.817
+
+logging:
+  log_dir: lightning_logs
+  log_name: pathway_mean_brca
