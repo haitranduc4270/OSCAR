@@ -81,9 +81,9 @@ uv run python train_baselines_matched.py --cohort BRCA --models moxgate,mot,mobr
 ```
 
 Known limitations:
-- `train_baselines_matched.py` is a rewrite of the earlier baseline code and has only been smoke-tested on random tensors, not run end-to-end on the real folds.
-- For MoXGATE the runner uses `configs/config_moxgate_brca.yaml` for every cohort, with `num_classes` taken from each cohort's OSCAR config. The cohort-specific MoXGATE configs for LUNG and COADREAD were removed from this branch.
-- The baseline numbers in the table below come from the earlier runs, not from `train_baselines_matched.py`.
+- The OSCAR 1×128 numbers come from the earlier matched runs (`lightning_logs/{brca,lung,coadread}_table51_matched/`). That script is not on this branch, so those rows cannot be regenerated from this tree.
+- MoXGATE uses one config per cohort: `configs/config_moxgate_{brca,lung,crc}.yaml`. The LUNG and COADREAD files were deleted earlier and were rebuilt by copying the BRCA paper config and changing only data paths, `num_classes` (2 and 4) and `log_name`. Rebuilt runs reproduce the earlier MoXGATE numbers exactly, but the original files could not be checked.
+- The baseline hyperparameters were not tuned per cohort. Some runs (e.g. MoGCN on BRCA, moBRCA-net on COADREAD) have large fold-to-fold variance.
 
 ## Results (matched 5-fold, mean ± std, %)
 
@@ -92,11 +92,13 @@ Known limitations:
 | **TokenOSCAR (128×32)** | **88.73±3.07 / 90.61±1.81** | **96.17±1.08 / 96.19±1.08** | 90.25±2.47 / 91.89±1.12 |
 | OSCAR (1×128) | 87.01±3.41 / 88.85±2.58 | 95.72±1.70 / 95.75±1.69 | **93.43±2.96 / 94.13±3.09** |
 | MoXGATE (paper) | 86.82±2.69 / 89.23±1.65 | 96.02±0.76 / 96.04±0.75 | 86.09±2.86 / 88.30±2.93 |
-| MOT | 84.25±2.54 / 86.69±0.80 | 95.13±2.08 / 95.16±2.06 | 80.71±6.85 / 82.41±4.22 |
-| DeepMoIC | 80.79±2.79 / 84.35±1.74 | 94.24±1.57 / 94.29±1.55 | 78.79±6.93 / 80.64±6.11 |
-| MoGCN | 69.02±17.30 / 77.88±9.17 | 92.89±3.39 / 92.97±3.31 | 62.78±25.04 / 69.51±16.45 |
-| MOGONET | 61.13±8.03 / 73.78±3.00 | 87.65±1.98 / 87.97±1.81 | 69.57±12.38 / 77.51±4.54 |
-| moBRCA-net | 52.72±8.28 / 68.69±2.89 | 59.27±22.21 / 67.16±16.56 | 32.11±7.59 / 49.08±4.83 |
+| MOT | 89.28±3.19 / 90.80±2.11 | 95.87±1.52 / 95.90±1.51 | 87.27±2.13 / 90.11±2.19 |
+| DeepMoIC | 81.17±2.09 / 85.13±1.43 | 92.92±2.61 / 92.97±2.59 | 80.96±10.01 / 86.08±5.65 |
+| MoGCN | 81.29±2.08 / 85.33±1.34 | 94.10±2.47 / 94.14±2.45 | 84.39±3.32 / 86.95±2.13 |
+| MOGONET | 74.55±2.71 / 82.39±0.62 | 93.45±2.61 / 93.55±2.53 | 91.37±2.70 / 92.33±1.16 |
+| moBRCA-net | 83.05±3.20 / 85.91±1.58 | 95.43±1.58 / 95.46±1.56 | 80.60±5.73 / 83.30±4.02 |
+
+The six baseline rows (MoXGATE, MOT, DeepMoIC, MoGCN, MOGONET, moBRCA-net) come from `train_baselines_matched.py` (`lightning_logs/baselines_matched/`). MoXGATE matches its earlier numbers; the other five replace the earlier `table51` values.
 
 ## Visualize attention (gradient feature importance)
 
