@@ -68,7 +68,29 @@ Báo cáo này tái hiện các thí nghiệm ablation trong Chương 5 của lu
 
 ---
 
-## 4. Nhận xét chính
+## 4. Table 5.4 — Enrichr Over-Representation on BRCA (TokenOSCAR `256×32`)
+
+Chạy `metrix/biomarker_step3_enrichment.py` trên danh sách consensus feature của **TokenOSCAR (`256×32`)** (`attention_plots/token_oscar_step1_consensus/consensus_features.csv`) với 3 thư viện `GO_Biological_Process_2025`, `KEGG_2021_Human`, và `MSigDB_Hallmark_2020`.
+
+### Luminal A consensus list (20 genes)
+*(GO:BP có 9 term đạt FDR < 0.05; MSigDB Hallmark 2020 và KEGG 2021 Human không có term nào qua ngưỡng 0.05.)*
+
+| Library | Term | Overlap | Adjusted P | Genes |
+|---|---|---:|---:|---|
+| GO:BP | Spindle Assembly Checkpoint Signaling (GO:0071173) | 2/27 | 3.3 × 10⁻⁴ | HASPIN, NDC80 |
+| GO:BP | Mitotic Spindle Assembly Checkpoint Signaling (GO:0007094) | 2/27 | 3.3 × 10⁻⁴ | HASPIN, NDC80 |
+| GO:BP | Mitotic Spindle Checkpoint Signaling (GO:0071174) | 2/27 | 3.3 × 10⁻⁴ | HASPIN, NDC80 |
+| GO:BP | Negative Regulation of Mitotic Metaphase/Anaphase Transition (GO:0045841) | 2/29 | 3.8 × 10⁻⁴ | HASPIN, NDC80 |
+| GO:BP | Metaphase Chromosome Alignment (GO:0051310) | 2/55 | 1.4 × 10⁻³ | NDC80, CEP55 |
+
+### Tóm tắt 3 subtype còn lại (FDR < 0.05)
+- **Luminal B (18 genes, 28 terms):** GO:BP Mitotic Spindle Assembly Checkpoint (`HASPIN, NDC80`, Adj P = `2.7 × 10⁻⁴`), KEGG FoxO signaling (`IRS1, ARAF, EGFR`, `2.1 × 10⁻⁴`), KEGG Estrogen signaling (`KRT17, KRT14, EGFR`, `2.4 × 10⁻⁴`).
+- **HER2-enriched (28 genes, 12 terms):** GO:BP PI3K/AKT signal transduction (`IRS1, ERBB2, GATA3`, `2.2 × 10⁻⁵`), KEGG Breast cancer (`ERBB2, KIT, ARAF, ESR1`, `5.0 × 10⁻⁵`).
+- **Basal-like (19 genes, 91 terms):** GO:BP ERBB2-EGFR / EGFR signaling (`ERBB2, EGFR, GRB7`, `8.5 × 10⁻⁶`), KEGG Breast cancer (`KIT, ERBB2, ARAF, EGFR`, `1.0 × 10⁻⁵`).
+
+---
+
+## 5. Nhận xét chính
 
 1. **Vai trò của Self-Attention:** Bỏ self-attention (`Without self-attention` và `Without gate & self-attention`) làm giảm mạnh nhất trên trung bình cả 3 cohort (Avg F1 tụt `-1.64` và `-2.18`), đặc biệt nặng trên COADREAD (`-4.62` và `-8.30` F1).
 2. **Vai trò của Gated Fusion:** Trên COADREAD (N = 222, 4 lớp CMS), bỏ gate làm tụt `-4.23` F1 / `-2.67` Acc và tăng độ dao động (std F1 từ `2.55` lên `3.94`). Trên BRCA, bỏ gate gần như hòa về điểm trung bình (`+0.28` F1 / `+0.19` Acc) nhưng kém ổn định hơn (std F1 `2.75` vs `2.17`), do `TokenCrossAttention` đã có sẵn residual connection.
@@ -77,11 +99,18 @@ Báo cáo này tái hiện các thí nghiệm ablation trong Chương 5 của lu
 
 ---
 
-## 5. Lệnh tái lập
+## 6. Lệnh tái lập
 
 ```bash
 # Chạy toàn bộ 8 biến thể ablation (Table 5.2 mở rộng & Table 5.3) trên 3 cohort
 uv run python train_token_oscar_ablation.py --cohort all --variants all
+
+# Chạy Enrichr (Table 5.4) cho TokenOSCAR (256x32)
+uv run --with gseapy python metrix/biomarker_step3_enrichment.py \
+  --consensus-csv attention_plots/token_oscar_step1_consensus/consensus_features.csv \
+  --de-csv attention_plots/token_oscar_step2_de/consensus_with_de.csv \
+  --output-dir attention_plots/token_oscar_step3_enrichment \
+  --class-names LumA,LumB,Basal,HER2
 ```
 
-Dữ liệu chi tiết từng fold được lưu tại `ablation_study/results.json`.
+Dữ liệu chi tiết từng fold được lưu tại `ablation_study/results.json`; bảng Enrichr đạt FDR < 0.05 lưu tại `ablation_study/table5_4_enrichment_sig.csv`.
