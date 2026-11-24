@@ -6,7 +6,12 @@ import pandas as pd
 import numpy as np
 from pytorch_lightning import LightningDataModule
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
+
+
+def csv_stem(path: str) -> str:
+    """Filename without extension. Configs may store Windows paths."""
+    return Path(str(path).replace("\\", "/")).stem
 
 
 class MultiOmicDataset(Dataset):
@@ -52,6 +57,8 @@ class BRCADataModule(LightningDataModule):
         current_fold: int = 0,
         pre_split_fold_dir: str | None = None,
         pin_memory: bool | None = None,
+        split_protocol: str = "pre_split",
+        test_size: float = 0.2,
     ):
         super().__init__()
         
@@ -70,6 +77,10 @@ class BRCADataModule(LightningDataModule):
         self.n_folds = n_folds
         self.current_fold = current_fold
         self.pre_split_fold_dir = pre_split_fold_dir
+        self.split_protocol = split_protocol
+        self.test_size = test_size
+        self.test_set = None
+        self.split_counts = None
         if pin_memory is None:
             pin_memory = torch.cuda.is_available()
         self.pin_memory = pin_memory
@@ -80,6 +91,10 @@ class BRCADataModule(LightningDataModule):
             if not fold_dir.is_dir():
                 raise NotADirectoryError(f"pre_split_fold_dir not found: {fold_dir}")
 
+            if self.split_protocol == "pathformer":
+                self._setup_pathformer_split(fold_dir)
+                return
+
             def split_paths(stem: str) -> tuple[Path, Path]:
                 tr = fold_dir / f"{stem}_train.csv"
                 va = fold_dir / f"{stem}_val.csv"
@@ -89,13 +104,13 @@ class BRCADataModule(LightningDataModule):
                     )
                 return tr, va
 
-            y_stem = Path(self.y_path).stem
+            y_stem = csv_stem(self.y_path)
             y_train_path, y_val_path = split_paths(y_stem)
 
             omic_dfs_train = {}
             omic_dfs_val = {}
             for name, path in self.paths.items():
-                stem = Path(path).stem
+                stem = csv_stem(path)
                 p_train, p_val = split_paths(stem)
                 omic_dfs_train[name] = pd.read_csv(p_train, index_col=0)
                 omic_dfs_val[name] = pd.read_csv(p_val, index_col=0)
@@ -121,6 +136,9 @@ class BRCADataModule(LightningDataModule):
             self.val_set = MultiOmicDataset(X_val_dict, y_val)
             self.feature_dims = {name: X_train_dict[name].shape[1] for name in X_train_dict}
             return
+
+        if self.split_protocol == "pathformer":
+            raise ValueError("split_protocol='pathformer' requires pre_split_fold_dir so the full cohort can be rebuilt.")
 
         omic_dfs = {name: pd.read_csv(path, index_col=0) for name, path in self.paths.items()}
 
@@ -157,6 +175,90 @@ class BRCADataModule(LightningDataModule):
         # Store feature dims for model config
         self.feature_dims = {name: X_dict[name].shape[1] for name in X_dict}
 
+    def _setup_pathformer_split(self, fold_dir: Path):
+        """Rebuild the full cohort from one fold, then split train/validation/test.
+
+        Pathformer holds out 20% as test, then holds out 20% of the remaining
+        samples as validation. Both cuts are stratified. Scaler statistics come
+        from the training split only.
+        """
+        def split_paths(stem: str) -> tuple[Path, Path]:
+            tr = fold_dir / f"{stem}_train.csv"
+            va = fold_dir / f"{stem}_val.csv"
+            if not tr.is_file() or not va.is_file():
+                raise FileNotFoundError(
+                    f"Expected {tr.name} and {va.name} under {fold_dir}"
+                )
+            return tr, va
+
+        def read_omic(train_path: Path, val_path: Path) -> pd.DataFrame:
+            train_df = pd.read_csv(train_path, index_col=0)
+            val_df = pd.read_csv(val_path, index_col=0)
+            val_df = val_df.reindex(train_df.index)
+            if val_df.isna().any().any():
+                raise ValueError(f"Train/val features do not align: {train_path.name}")
+            return pd.concat([train_df, val_df], axis=1)
+
+        y_stem = csv_stem(self.y_path)
+        y_train_path, y_val_path = split_paths(y_stem)
+        y = np.concatenate([
+            pd.read_csv(y_train_path).iloc[:, 0].to_numpy(),
+            pd.read_csv(y_val_path).iloc[:, 0].to_numpy(),
+        ])
+
+        X_full = {}
+        for name, path in self.paths.items():
+            p_train, p_val = split_paths(csv_stem(path))
+            X_full[name] = read_omic(p_train, p_val).T
+
+        n_samples = next(iter(X_full.values())).shape[0]
+        if n_samples != len(y):
+            raise ValueError(f"Sample count {n_samples} does not match labels {len(y)}")
+
+        indices = np.arange(n_samples)
+        dev_idx, test_idx = train_test_split(
+            indices,
+            test_size=self.test_size,
+            stratify=y,
+            random_state=self.seed,
+        )
+        train_idx, val_idx = train_test_split(
+            dev_idx,
+            test_size=self.val_split,
+            stratify=y[dev_idx],
+            random_state=self.seed,
+        )
+
+        def take(frame: pd.DataFrame, idx: np.ndarray) -> np.ndarray:
+            return frame.iloc[idx].to_numpy(dtype=np.float32)
+
+        X_train, X_val, X_test = {}, {}, {}
+        for name, frame in X_full.items():
+            train_values = take(frame, train_idx)
+            if self.normalize:
+                scaler = StandardScaler()
+                X_train[name] = scaler.fit_transform(train_values).astype(np.float32)
+                X_val[name] = scaler.transform(take(frame, val_idx)).astype(np.float32)
+                X_test[name] = scaler.transform(take(frame, test_idx)).astype(np.float32)
+            else:
+                X_train[name] = train_values
+                X_val[name] = take(frame, val_idx)
+                X_test[name] = take(frame, test_idx)
+
+        self.train_set = MultiOmicDataset(X_train, y[train_idx])
+        self.val_set = MultiOmicDataset(X_val, y[val_idx])
+        self.test_set = MultiOmicDataset(X_test, y[test_idx])
+        self.feature_dims = {name: values.shape[1] for name, values in X_train.items()}
+        self.split_counts = {
+            "n_total": int(n_samples),
+            "n_train": int(len(train_idx)),
+            "n_val": int(len(val_idx)),
+            "n_test": int(len(test_idx)),
+            "train_labels": np.bincount(y[train_idx], minlength=int(y.max()) + 1).tolist(),
+            "val_labels": np.bincount(y[val_idx], minlength=int(y.max()) + 1).tolist(),
+            "test_labels": np.bincount(y[test_idx], minlength=int(y.max()) + 1).tolist(),
+        }
+
     def train_dataloader(self):
         return DataLoader(
             self.train_set,
@@ -170,6 +272,16 @@ class BRCADataModule(LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_set,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.num_workers > 0,
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_set,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

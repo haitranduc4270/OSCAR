@@ -1,0 +1,14 @@
+---
+description: When the user says try/thử an experiment, implement and run it without asking
+alwaysApply: true
+---
+
+# Try = always implement + run + report
+
+When the user asks to **thử / try / luôn đi** an idea, experiment, variant, or change:
+
+1. Implement it (minimal, focused) — no “có muốn chạy không?”.
+2. **Always run it yourself** right away (train / eval / smoke as needed).
+3. **Report results** when finished (scores, Δ vs baseline, where the log/report is).
+
+Do not wait for a separate “chạy đi”. Only pause if blocked (missing data, no GPU, etc.) — then say what blocked and fix if possible.

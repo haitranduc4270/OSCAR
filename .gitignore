@@ -65,3 +65,5 @@ csv/*
 
 experiments/*
 scripts/*
+# Local experiment archive (md + code snapshots)
+changelog/
