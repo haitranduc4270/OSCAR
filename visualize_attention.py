@@ -133,23 +133,21 @@ def compute_gradient_feature_importance(
 
         selected_logits.sum().backward()
 
-        # Accumulate absolute gradients per class
+        # Accumulate absolute gradients per class (count samples once per batch)
         labels_np = labels.detach().cpu().numpy()
-        for omic in omic_names:
-            grads = batch_omics[omic].grad.detach().cpu().numpy()  # [B, F]
-            abs_grads = np.abs(grads)
-
-            for c in range(num_classes):
-                mask = labels_np == c
-                if not np.any(mask):
-                    continue
-                grads_c = abs_grads[mask]  # [Nc, F]
-
+        for c in range(num_classes):
+            mask = labels_np == c
+            n_c = int(mask.sum())
+            if n_c == 0:
+                continue
+            class_counts[c] += n_c
+            for omic in omic_names:
+                grads = batch_omics[omic].grad.detach().cpu().numpy()  # [B, F]
+                grads_c = np.abs(grads)[mask]  # [Nc, F]
                 if omic not in grad_sums[c]:
                     grad_sums[c][omic] = grads_c.sum(axis=0)
                 else:
                     grad_sums[c][omic] += grads_c.sum(axis=0)
-                class_counts[c] += int(mask.sum())
 
     # Normalize by number of samples per class
     importance = {}
