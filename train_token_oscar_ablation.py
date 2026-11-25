@@ -345,6 +345,12 @@ def main() -> None:
     parser.add_argument("--d-mid", type=int, default=256)
     parser.add_argument("--n-heads", type=int, default=4)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    parser.add_argument(
+        "--orig-for-prot",
+        choices=["config", "true", "false"],
+        default="config",
+        help="Override model.use_original_for_proteomics across all cohorts",
+    )
     parser.add_argument("--force", action="store_true", help="Re-run even if already in report.json")
     args = parser.parse_args()
 
@@ -373,6 +379,8 @@ def main() -> None:
     for cohort_name in cohorts:
         spec = COHORTS[cohort_name]
         oscar_cfg = yaml.safe_load(open(spec["oscar"]))
+        if args.orig_for_prot != "config":
+            oscar_cfg["model"]["use_original_for_proteomics"] = args.orig_for_prot == "true"
         folds_dir = spec["folds"]
         prefix = spec["prefix"]
         stems = _stems(prefix)

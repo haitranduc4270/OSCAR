@@ -22,7 +22,7 @@ model:
   use_cross_attention: true
   use_gated_fusion: true
   cross_attn_hidden: 128
-  use_original_for_proteomics: false
+  use_original_for_proteomics: true
   gated_fusion_hidden: 256
 
 train:

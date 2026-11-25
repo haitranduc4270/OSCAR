@@ -37,25 +37,25 @@ Bản **TokenOSCAR (full)** gồm đầy đủ 2 khối tương tác có gate: *
 
 | Model variant                                       | Cross | Cross Gate | Self  | Self Gate | BRCA             | LUNG             | COADREAD         | Avg Acc   | Δ vs Full |
 | --------------------------------------------------- | ----- | ---------- | ----- | --------- | ---------------- | ---------------- | ---------------- | --------- | --------- |
-| Concatenation                                       | ✗     | ✗          | ✗     | ✗         | 90.02 ± 1.30     | 95.90 ± 1.43     | 90.08 ± 3.70     | 92.00     | -0.70     |
-| Without self-attention (cross + gate)               | ✓     | ✓          | ✗     | ✗         | 90.22 ± 1.64     | 95.02 ± 1.49     | 87.84 ± 3.04     | 91.02     | -1.68     |
-| Without cross-attention (self + gate + pos)         | ✗     | ✗          | ✓     | ✓         | 90.60 ± 1.61     | 96.49 ± 1.87     | 90.97 ± 2.10     | 92.69     | -0.01     |
-| Without both gates (+ pos)                          | ✓     | ✗          | ✓     | ✗         | 91.19 ± 1.65     | 94.58 ± 3.28     | 90.98 ± 2.87     | 92.25     | -0.45     |
-| Without cross gate (self gate + pos)                | ✓     | ✗          | ✓     | ✓         | 89.43 ± 0.99     | 96.33 ± 1.23     | **91.90 ± 2.69** | 92.55     | -0.15     |
-| Without self gate (cross gate + pos)                | ✓     | ✓          | ✓     | ✗         | 91.00 ± 2.44     | 95.61 ± 1.85     | 89.19 ± 1.65     | 91.93     | -0.77     |
-| **TokenOSCAR (full, cross gate + self gate + pos)** | **✓** | **✓**      | **✓** | **✓**     | **91.39 ± 2.18** | **96.63 ± 0.99** | 90.09 ± 1.80     | **92.70** | **0.00**  |
+| Concatenation                                       | ✗     | ✗          | ✗     | ✗         | 90.02 ± 1.30     | 95.90 ± 1.43     | 90.08 ± 3.70     | 92.00     | -1.25     |
+| Without self-attention (cross + gate)               | ✓     | ✓          | ✗     | ✗         | 90.22 ± 1.64     | 95.75 ± 1.56     | 88.73 ± 2.53     | 91.56     | -1.69     |
+| Without cross-attention (self + gate + pos)         | ✗     | ✗          | ✓     | ✓         | 90.60 ± 1.61     | 96.49 ± 1.87     | 90.97 ± 2.10     | 92.69     | -0.56     |
+| Without both gates (+ pos)                          | ✓     | ✗          | ✓     | ✗         | 91.19 ± 1.65     | 95.46 ± 1.41     | 90.55 ± 3.89     | 92.40     | -0.85     |
+| Without cross gate (self gate + pos)                | ✓     | ✗          | ✓     | ✓         | 89.43 ± 0.99     | 96.19 ± 1.17     | **91.41 ± 3.35** | 92.34     | -0.91     |
+| Without self gate (cross gate + pos)                | ✓     | ✓          | ✓     | ✗         | 91.00 ± 2.44     | 96.48 ± 1.57     | 90.98 ± 3.82     | 92.82     | -0.43     |
+| **TokenOSCAR (full, cross gate + self gate + pos)** | **✓** | **✓**      | **✓** | **✓**     | **91.39 ± 2.18** | **97.36 ± 1.28** | 91.00 ± 2.45     | **93.25** | **0.00**  |
 
 ### Macro-F1 (%, mean ± std)
 
 | Model variant                                       | Cross | Cross Gate | Self  | Self Gate | BRCA             | LUNG             | COADREAD         | Avg F1    | Δ vs Full |
 | --------------------------------------------------- | ----- | ---------- | ----- | --------- | ---------------- | ---------------- | ---------------- | --------- | --------- |
-| Concatenation                                       | ✗     | ✗          | ✗     | ✗         | 88.85 ± 2.08     | 95.87 ± 1.44     | 89.61 ± 4.79     | 91.44     | -0.01     |
-| Without self-attention (cross + gate)               | ✓     | ✓          | ✗     | ✗         | 88.71 ± 1.83     | 94.99 ± 1.50     | 86.72 ± 4.12     | 90.14     | -1.31     |
-| Without cross-attention (self + gate + pos)         | ✗     | ✗          | ✓     | ✓         | 88.48 ± 2.54     | 96.46 ± 1.89     | 89.21 ± 3.41     | 91.38     | -0.07     |
-| Without both gates (+ pos)                          | ✓     | ✗          | ✓     | ✗         | 89.72 ± 2.63     | 94.56 ± 3.29     | 89.29 ± 3.20     | 91.19     | -0.26     |
-| Without cross gate (self gate + pos)                | ✓     | ✗          | ✓     | ✓         | 88.22 ± 1.43     | 96.31 ± 1.25     | **90.78 ± 2.22** | **91.77** | +0.32     |
-| Without self gate (cross gate + pos)                | ✓     | ✓          | ✓     | ✗         | 89.02 ± 3.63     | 95.58 ± 1.85     | 86.31 ± 3.13     | 90.30     | -1.15     |
-| **TokenOSCAR (full, cross gate + self gate + pos)** | **✓** | **✓**      | **✓** | **✓**     | **89.93 ± 2.15** | **96.62 ± 1.00** | 87.81 ± 3.91     | 91.45     | **0.00**  |
+| Concatenation                                       | ✗     | ✗          | ✗     | ✗         | 88.85 ± 2.08     | 95.87 ± 1.44     | 89.61 ± 4.79     | 91.44     | -0.74     |
+| Without self-attention (cross + gate)               | ✓     | ✓          | ✗     | ✗         | 88.71 ± 1.83     | 95.72 ± 1.58     | 87.96 ± 3.96     | 90.80     | -1.38     |
+| Without cross-attention (self + gate + pos)         | ✗     | ✗          | ✓     | ✓         | 88.48 ± 2.54     | 96.46 ± 1.89     | 89.21 ± 3.41     | 91.38     | -0.80     |
+| Without both gates (+ pos)                          | ✓     | ✗          | ✓     | ✗         | 89.72 ± 2.63     | 95.44 ± 1.41     | 89.31 ± 5.85     | 91.49     | -0.69     |
+| Without cross gate (self gate + pos)                | ✓     | ✗          | ✓     | ✓         | 88.22 ± 1.43     | 96.17 ± 1.18     | **90.70 ± 4.12** | 91.70     | -0.48     |
+| Without self gate (cross gate + pos)                | ✓     | ✓          | ✓     | ✗         | 89.02 ± 3.63     | 96.46 ± 1.59     | 88.34 ± 5.31     | 91.27     | -0.91     |
+| **TokenOSCAR (full, cross gate + self gate + pos)** | **✓** | **✓**      | **✓** | **✓**     | **89.93 ± 2.15** | **97.34 ± 1.30** | 89.26 ± 2.55     | **92.18** | **0.00**  |
 
 
 ---
@@ -64,23 +64,23 @@ Bản **TokenOSCAR (full)** gồm đầy đủ 2 khối tương tác có gate: *
 
 ## 3. Table 5.3 — Effect of Cross-Attention Order
 
-*(Chạy trên bản Full có cross gate, self gate và `pos_embed`.)*
+*(Chạy trên bản Full có cross gate, self gate, `pos_embed`, và `use_original_for_proteomics = true` thống nhất trên cả 3 cohort.)*
 
 ### Accuracy (%, mean ± std)
 
 | Ordering                                                 | BRCA             | LUNG             | COADREAD         | Avg Acc   | Δ vs Bio |
 | -------------------------------------------------------- | ---------------- | ---------------- | ---------------- | --------- | -------- |
-| Proteomics → transcriptomics → genomics (reverse)        | **91.98 ± 1.69** | **97.21 ± 0.85** | 91.00 ± 1.98     | **93.40** | +0.70    |
-| Transcriptomics → genomics → proteomics (mixed)          | 90.41 ± 2.00     | 96.48 ± 1.87     | **91.45 ± 2.59** | 92.78     | +0.08    |
-| **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 91.39 ± 2.18     | 96.63 ± 0.99     | 90.09 ± 1.80     | 92.70     | **0.00** |
+| Proteomics → transcriptomics → genomics (reverse)        | **91.98 ± 1.69** | 95.89 ± 1.00     | 90.55 ± 1.66     | 92.80     | -0.45    |
+| Transcriptomics → genomics → proteomics (mixed)          | 90.41 ± 2.00     | 96.92 ± 1.57     | **91.46 ± 3.56** | 92.93     | -0.32    |
+| **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 91.39 ± 2.18     | **97.36 ± 1.28** | 91.00 ± 2.45     | **93.25** | **0.00** |
 
 ### Macro-F1 (%, mean ± std)
 
 | Ordering                                                 | BRCA             | LUNG             | COADREAD         | Avg F1    | Δ vs Bio |
 | -------------------------------------------------------- | ---------------- | ---------------- | ---------------- | --------- | -------- |
-| Proteomics → transcriptomics → genomics (reverse)        | **90.85 ± 2.34** | **97.20 ± 0.86** | 89.90 ± 1.43     | **92.65** | +1.20    |
-| Transcriptomics → genomics → proteomics (mixed)          | 88.76 ± 2.91     | 96.46 ± 1.89     | **90.06 ± 1.99** | 91.76     | +0.31    |
-| **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 89.93 ± 2.15     | 96.62 ± 1.00     | 87.81 ± 3.91     | 91.45     | **0.00** |
+| Proteomics → transcriptomics → genomics (reverse)        | **90.85 ± 2.34** | 95.87 ± 1.02     | 89.62 ± 1.35     | 92.11     | -0.07    |
+| Transcriptomics → genomics → proteomics (mixed)          | 88.76 ± 2.91     | 96.91 ± 1.58     | **90.05 ± 3.42** | 91.91     | -0.27    |
+| **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 89.93 ± 2.15     | **97.34 ± 1.30** | 89.26 ± 2.55     | **92.18** | **0.00** |
 
 
 ---
