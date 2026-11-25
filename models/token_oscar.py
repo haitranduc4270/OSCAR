@@ -106,16 +106,24 @@ class TokenOSCARModel(BaseLightningModel):
         use_original_for_proteomics: bool = True,
         use_self_attention: bool = True,
         cross_order: tuple[str, str, str] = ("CNV", "mRNA", "Proteomics"),
+        use_self_gate: bool = False,
+        use_pos_embed: bool = False,
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
             raise ValueError(f"token_dim {token_dim} must be divisible by n_heads {n_heads}")
+        if use_self_gate and not use_self_attention:
+            raise ValueError("use_self_gate requires use_self_attention=True")
+        if use_pos_embed and not use_self_attention:
+            raise ValueError("use_pos_embed requires use_self_attention=True")
 
         self.valid_omics = list(input_dims.keys())
         self.use_cross_attention = use_cross_attention
         self.use_gated_fusion = use_gated_fusion
         self.use_original_for_proteomics = use_original_for_proteomics
         self.use_self_attention = use_self_attention
+        self.use_self_gate = use_self_gate
+        self.use_pos_embed = use_pos_embed
         self.cross_order = tuple(cross_order)
 
         self.encoders = nn.ModuleDict(
@@ -146,6 +154,9 @@ class TokenOSCARModel(BaseLightningModel):
                 }
             )
             self.cls_token = nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
+            if self.use_pos_embed:
+                seq_len = 1 + len(self.valid_omics) * num_tokens
+                self.pos_embed = nn.Parameter(torch.randn(1, seq_len, token_dim) * 0.02)
 
             enc_layer = nn.TransformerEncoderLayer(
                 d_model=token_dim,
@@ -162,6 +173,9 @@ class TokenOSCARModel(BaseLightningModel):
                 norm=nn.LayerNorm(token_dim),
                 enable_nested_tensor=False,
             )
+            if self.use_self_gate:
+                # Token-wise gated residual on the self-attention output (same form as cross-attn gate).
+                self.self_gate = TokenGatedFusion(token_dim, token_dim * 2, dropout)
             clf_in_dim = token_dim
         else:
             clf_in_dim = token_dim * len(self.valid_omics)
@@ -197,7 +211,12 @@ class TokenOSCARModel(BaseLightningModel):
             B = seq[0].size(0)
             cls = self.cls_token.expand(B, -1, -1)
             all_tokens = torch.cat([cls, *seq], dim=1)  # (B, 1 + 3*T, M)
-            fused = self.fusion(all_tokens)[:, 0]  # CLS token: (B, M)
+            if self.use_pos_embed:
+                all_tokens = all_tokens + self.pos_embed
+            fused_seq = self.fusion(all_tokens)
+            if self.use_self_gate:
+                fused_seq = self.self_gate(all_tokens, fused_seq)
+            fused = fused_seq[:, 0]  # CLS token: (B, M)
         else:
             fused = torch.cat(
                 [tokens[name].mean(dim=1) for name in self.valid_omics], dim=-1

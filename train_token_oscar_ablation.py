@@ -69,11 +69,98 @@ VARIANTS: dict[str, dict] = {
         "use_self_attention": True,
         "cross_order": ("CNV", "mRNA", "Proteomics"),
     },
+    "no_cross_self_gate": {
+        "label": "Without cross-attention (self-attn + gate)",
+        "use_cross_attention": False,
+        "use_gated_fusion": False,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
     "no_gate_no_self_attn": {
         "label": "Without gate & self-attention (cross-attn only)",
         "use_cross_attention": True,
         "use_gated_fusion": False,
         "use_self_attention": False,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "self_gate": {
+        "label": "Cross gate + self-attention gate",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "self_gate_pos": {
+        "label": "Cross gate + self-attention gate + pos_embed",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "use_pos_embed": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "no_cross_self_gate_pos": {
+        "label": "Without cross-attention (self-attn + gate + pos_embed)",
+        "use_cross_attention": False,
+        "use_gated_fusion": False,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "use_pos_embed": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "no_gate_pos": {
+        "label": "Without both gates (+ pos_embed)",
+        "use_cross_attention": True,
+        "use_gated_fusion": False,
+        "use_self_attention": True,
+        "use_self_gate": False,
+        "use_pos_embed": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "no_gate_self_gate_pos": {
+        "label": "Without cross gate (self gate + pos_embed)",
+        "use_cross_attention": True,
+        "use_gated_fusion": False,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "use_pos_embed": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "full_pos": {
+        "label": "Without self gate (cross gate + pos_embed)",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": False,
+        "use_pos_embed": True,
+        "cross_order": ("CNV", "mRNA", "Proteomics"),
+    },
+    "order_reverse_self_gate_pos": {
+        "label": "Proteomics -> mRNA -> CNV (reverse, self-gate + pos_embed)",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "use_pos_embed": True,
+        "cross_order": ("Proteomics", "mRNA", "CNV"),
+    },
+    "order_mixed_self_gate_pos": {
+        "label": "mRNA -> CNV -> Proteomics (mixed, self-gate + pos_embed)",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "use_pos_embed": True,
+        "cross_order": ("mRNA", "CNV", "Proteomics"),
+    },
+    "no_gate_self_gate": {
+        "label": "Cross no gate + self-attention gate",
+        "use_cross_attention": True,
+        "use_gated_fusion": False,
+        "use_self_attention": True,
+        "use_self_gate": True,
         "cross_order": ("CNV", "mRNA", "Proteomics"),
     },
     "order_reverse": {
@@ -88,6 +175,22 @@ VARIANTS: dict[str, dict] = {
         "use_cross_attention": True,
         "use_gated_fusion": True,
         "use_self_attention": True,
+        "cross_order": ("mRNA", "CNV", "Proteomics"),
+    },
+    "order_reverse_self_gate": {
+        "label": "Proteomics -> mRNA -> CNV (reverse, self-gate)",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
+        "cross_order": ("Proteomics", "mRNA", "CNV"),
+    },
+    "order_mixed_self_gate": {
+        "label": "mRNA -> CNV -> Proteomics (mixed, self-gate)",
+        "use_cross_attention": True,
+        "use_gated_fusion": True,
+        "use_self_attention": True,
+        "use_self_gate": True,
         "cross_order": ("mRNA", "CNV", "Proteomics"),
     },
 }
@@ -121,6 +224,8 @@ def build_variant(
         use_original_for_proteomics=bool(model_cfg["use_original_for_proteomics"]),
         use_self_attention=vspec["use_self_attention"],
         cross_order=vspec["cross_order"],
+        use_self_gate=bool(vspec.get("use_self_gate", False)),
+        use_pos_embed=bool(vspec.get("use_pos_embed", False)),
     )
 
 
@@ -142,7 +247,10 @@ def format_tables(results: dict[str, dict[str, dict]]) -> str:
         "| Model variant | BRCA | LUNG | COADREAD | Avg Acc |",
         "|---|---|---|---|---|",
     ]
-    for vkey in ("concat", "no_cross_attn", "no_self_attn", "no_gate_no_self_attn", "no_gate", "full"):
+    for vkey in (
+        "concat", "no_cross_attn", "no_cross_self_gate", "no_self_attn",
+        "no_gate_no_self_attn", "no_gate", "no_gate_self_gate", "full", "self_gate",
+    ):
         vals = [
             100 * results[vkey][c]["summary"]["accuracy_mean"]
             for c in ("BRCA", "LUNG", "COADREAD")
@@ -160,7 +268,10 @@ def format_tables(results: dict[str, dict[str, dict]]) -> str:
         "| Model variant | BRCA | LUNG | COADREAD | Avg F1 |",
         "|---|---|---|---|---|",
     ]
-    for vkey in ("concat", "no_cross_attn", "no_self_attn", "no_gate_no_self_attn", "no_gate", "full"):
+    for vkey in (
+        "concat", "no_cross_attn", "no_cross_self_gate", "no_self_attn",
+        "no_gate_no_self_attn", "no_gate", "no_gate_self_gate", "full", "self_gate",
+    ):
         vals = [
             100 * results[vkey][c]["summary"]["f1_macro_mean"]
             for c in ("BRCA", "LUNG", "COADREAD")
