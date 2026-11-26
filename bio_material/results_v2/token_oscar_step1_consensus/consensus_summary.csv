@@ -1,0 +1,13 @@
+class_name,omic,n_consensus_features
+Basal,CNV,13
+Basal,Proteomics,16
+Basal,mRNA,11
+HER2,CNV,5
+HER2,Proteomics,15
+HER2,mRNA,6
+LumA,CNV,2
+LumA,Proteomics,12
+LumA,mRNA,10
+LumB,CNV,7
+LumB,Proteomics,9
+LumB,mRNA,3

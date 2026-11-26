@@ -1,0 +1,465 @@
+{
+  "protocol": {
+    "inner_val_fraction": 0.2,
+    "inner_seed": 42,
+    "max_epochs": 120,
+    "selection": "first maximum of inner validation macro-F1",
+    "retrain": "all samples in the fold training file",
+    "num_tokens": 256,
+    "token_dim": 32,
+    "d_mid": 256,
+    "n_heads": 4,
+    "architecture": "TokenOSCAR: each omic -> (B, 256, 32) -> 256x256 cross-attn + gate -> 769-token self-attn -> CLS"
+  },
+  "cohorts": {
+    "BRCA": {
+      "dims": {
+        "mRNA": 19580,
+        "CNV": 19273,
+        "Proteomics": 223
+      },
+      "params_total": 16420996,
+      "folds": [
+        {
+          "n_inner_train": 326,
+          "n_inner_val": 82,
+          "n_retrain": 408,
+          "n_test": 103,
+          "chosen_epoch": 42,
+          "inner_val_f1_macro": 0.9064556716995741,
+          "test": {
+            "loss": 0.375514453231782,
+            "accuracy": 0.912621359223301,
+            "f1_macro": 0.8940244883339512,
+            "f1_per_class": [
+              0.9411764705882353,
+              0.8108108108108109,
+              0.9545454545454546,
+              0.8695652173913043
+            ],
+            "support": [
+              50,
+              20,
+              22,
+              11
+            ]
+          },
+          "peak_cuda_mb": 2349.818359375,
+          "fold": 1
+        },
+        {
+          "n_inner_train": 327,
+          "n_inner_val": 82,
+          "n_retrain": 409,
+          "n_test": 102,
+          "chosen_epoch": 57,
+          "inner_val_f1_macro": 0.9213775412351362,
+          "test": {
+            "loss": 0.548396575684641,
+            "accuracy": 0.9117647058823529,
+            "f1_macro": 0.9098364530156929,
+            "f1_per_class": [
+              0.9166666666666666,
+              0.8292682926829268,
+              0.9767441860465116,
+              0.9166666666666666
+            ],
+            "support": [
+              50,
+              19,
+              22,
+              11
+            ]
+          },
+          "peak_cuda_mb": 2349.830078125,
+          "fold": 2
+        },
+        {
+          "n_inner_train": 327,
+          "n_inner_val": 82,
+          "n_retrain": 409,
+          "n_test": 102,
+          "chosen_epoch": 28,
+          "inner_val_f1_macro": 0.8993000440917107,
+          "test": {
+            "loss": 0.18943947159192143,
+            "accuracy": 0.9509803921568627,
+            "f1_macro": 0.9355229753744605,
+            "f1_per_class": [
+              0.9702970297029703,
+              0.8717948717948718,
+              1.0,
+              0.9
+            ],
+            "support": [
+              50,
+              19,
+              22,
+              11
+            ]
+          },
+          "peak_cuda_mb": 2349.841796875,
+          "fold": 3
+        },
+        {
+          "n_inner_train": 327,
+          "n_inner_val": 82,
+          "n_retrain": 409,
+          "n_test": 102,
+          "chosen_epoch": 24,
+          "inner_val_f1_macro": 0.918273092369478,
+          "test": {
+            "loss": 0.414072116800383,
+            "accuracy": 0.8823529411764706,
+            "f1_macro": 0.8775297619047618,
+            "f1_per_class": [
+              0.8958333333333334,
+              0.7142857142857143,
+              1.0,
+              0.9
+            ],
+            "support": [
+              49,
+              20,
+              23,
+              10
+            ]
+          },
+          "peak_cuda_mb": 2349.865234375,
+          "fold": 4
+        },
+        {
+          "n_inner_train": 327,
+          "n_inner_val": 82,
+          "n_retrain": 409,
+          "n_test": 102,
+          "chosen_epoch": 27,
+          "inner_val_f1_macro": 0.9385964912280702,
+          "test": {
+            "loss": 0.32255271645080225,
+            "accuracy": 0.9117647058823529,
+            "f1_macro": 0.8794941471571907,
+            "f1_per_class": [
+              0.9583333333333334,
+              0.8205128205128205,
+              0.9565217391304348,
+              0.782608695652174
+            ],
+            "support": [
+              49,
+              20,
+              23,
+              10
+            ]
+          },
+          "peak_cuda_mb": 2349.853515625,
+          "fold": 5
+        }
+      ],
+      "summary": {
+        "f1_macro_mean": 0.8992815651572116,
+        "f1_macro_std": 0.021527494906776905,
+        "accuracy_mean": 0.913896820864268,
+        "accuracy_std": 0.02182166921461777,
+        "f1_per_class_mean": [
+          0.9364613667249078,
+          0.8093345020174288,
+          0.9775622759444802,
+          0.8737681159420291
+        ]
+      }
+    },
+    "LUNG": {
+      "dims": {
+        "mRNA": 20530,
+        "CNV": 24776,
+        "Proteomics": 180
+      },
+      "params_total": 18061698,
+      "folds": [
+        {
+          "n_inner_train": 436,
+          "n_inner_val": 109,
+          "n_retrain": 545,
+          "n_test": 137,
+          "chosen_epoch": 13,
+          "inner_val_f1_macro": 0.9631507775524003,
+          "test": {
+            "loss": 0.1073063503216653,
+            "accuracy": 0.9781021897810219,
+            "f1_macro": 0.9780272654370489,
+            "f1_per_class": [
+              0.9793103448275862,
+              0.9767441860465116
+            ],
+            "support": [
+              72,
+              65
+            ]
+          },
+          "peak_cuda_mb": 2367.4423828125,
+          "fold": 1
+        },
+        {
+          "n_inner_train": 436,
+          "n_inner_val": 109,
+          "n_retrain": 545,
+          "n_test": 137,
+          "chosen_epoch": 21,
+          "inner_val_f1_macro": 0.963225371120108,
+          "test": {
+            "loss": 0.15266937238035083,
+            "accuracy": 0.9781021897810219,
+            "f1_macro": 0.9780601078311002,
+            "f1_per_class": [
+              0.9790209790209791,
+              0.9770992366412213
+            ],
+            "support": [
+              72,
+              65
+            ]
+          },
+          "peak_cuda_mb": 2367.4658203125,
+          "fold": 2
+        },
+        {
+          "n_inner_train": 436,
+          "n_inner_val": 110,
+          "n_retrain": 546,
+          "n_test": 136,
+          "chosen_epoch": 32,
+          "inner_val_f1_macro": 0.9817639257294429,
+          "test": {
+            "loss": 0.0643304634722881,
+            "accuracy": 0.9926470588235294,
+            "f1_macro": 0.9926275275112484,
+            "f1_per_class": [
+              0.993006993006993,
+              0.9922480620155039
+            ],
+            "support": [
+              72,
+              64
+            ]
+          },
+          "peak_cuda_mb": 2367.4775390625,
+          "fold": 3
+        },
+        {
+          "n_inner_train": 436,
+          "n_inner_val": 110,
+          "n_retrain": 546,
+          "n_test": 136,
+          "chosen_epoch": 59,
+          "inner_val_f1_macro": 1.0,
+          "test": {
+            "loss": 0.3458960830436862,
+            "accuracy": 0.9632352941176471,
+            "f1_macro": 0.9629931972789115,
+            "f1_per_class": [
+              0.9659863945578231,
+              0.96
+            ],
+            "support": [
+              72,
+              64
+            ]
+          },
+          "peak_cuda_mb": 2367.5009765625,
+          "fold": 4
+        },
+        {
+          "n_inner_train": 436,
+          "n_inner_val": 110,
+          "n_retrain": 546,
+          "n_test": 136,
+          "chosen_epoch": 7,
+          "inner_val_f1_macro": 0.9817941079112876,
+          "test": {
+            "loss": 0.17094015877913027,
+            "accuracy": 0.9558823529411765,
+            "f1_macro": 0.955536181342633,
+            "f1_per_class": [
+              0.9594594594594594,
+              0.9516129032258065
+            ],
+            "support": [
+              71,
+              65
+            ]
+          },
+          "peak_cuda_mb": 2367.5009765625,
+          "fold": 5
+        }
+      ],
+      "summary": {
+        "f1_macro_mean": 0.9734488558801884,
+        "f1_macro_std": 0.012963268338131446,
+        "accuracy_mean": 0.9735938170888794,
+        "accuracy_std": 0.012842677521937825,
+        "f1_per_class_mean": [
+          0.9753568341745682,
+          0.9715408775858088
+        ]
+      }
+    },
+    "COADREAD": {
+      "dims": {
+        "mRNA": 20530,
+        "CNV": 24776,
+        "Proteomics": 153
+      },
+      "params_total": 18055044,
+      "folds": [
+        {
+          "n_inner_train": 141,
+          "n_inner_val": 36,
+          "n_retrain": 177,
+          "n_test": 45,
+          "chosen_epoch": 29,
+          "inner_val_f1_macro": 0.9487012987012987,
+          "test": {
+            "loss": 0.3188632713423835,
+            "accuracy": 0.9111111111111111,
+            "f1_macro": 0.8913308913308913,
+            "f1_per_class": [
+              0.9444444444444444,
+              0.9285714285714286,
+              0.7692307692307693,
+              0.9230769230769231
+            ],
+            "support": [
+              17,
+              14,
+              7,
+              7
+            ]
+          },
+          "peak_cuda_mb": 2367.4228515625,
+          "fold": 1
+        },
+        {
+          "n_inner_train": 141,
+          "n_inner_val": 36,
+          "n_retrain": 177,
+          "n_test": 45,
+          "chosen_epoch": 58,
+          "inner_val_f1_macro": 0.923416149068323,
+          "test": {
+            "loss": 0.4786498612827725,
+            "accuracy": 0.8888888888888888,
+            "f1_macro": 0.8833333333333333,
+            "f1_per_class": [
+              0.8666666666666667,
+              0.9333333333333333,
+              0.8,
+              0.9333333333333333
+            ],
+            "support": [
+              17,
+              14,
+              7,
+              7
+            ]
+          },
+          "peak_cuda_mb": 2367.4462890625,
+          "fold": 2
+        },
+        {
+          "n_inner_train": 142,
+          "n_inner_val": 36,
+          "n_retrain": 178,
+          "n_test": 44,
+          "chosen_epoch": 27,
+          "inner_val_f1_macro": 0.9583333333333334,
+          "test": {
+            "loss": 0.44918685338713904,
+            "accuracy": 0.9090909090909091,
+            "f1_macro": 0.8606821106821106,
+            "f1_per_class": [
+              0.918918918918919,
+              1.0,
+              0.6666666666666666,
+              0.8571428571428571
+            ],
+            "support": [
+              17,
+              14,
+              6,
+              7
+            ]
+          },
+          "peak_cuda_mb": 2367.4580078125,
+          "fold": 3
+        },
+        {
+          "n_inner_train": 142,
+          "n_inner_val": 36,
+          "n_retrain": 178,
+          "n_test": 44,
+          "chosen_epoch": 91,
+          "inner_val_f1_macro": 0.9506688963210703,
+          "test": {
+            "loss": 0.785773060538552,
+            "accuracy": 0.8863636363636364,
+            "f1_macro": 0.8888574660633484,
+            "f1_per_class": [
+              0.8823529411764706,
+              0.9230769230769231,
+              0.75,
+              1.0
+            ],
+            "support": [
+              17,
+              14,
+              7,
+              6
+            ]
+          },
+          "peak_cuda_mb": 2367.4814453125,
+          "fold": 4
+        },
+        {
+          "n_inner_train": 142,
+          "n_inner_val": 36,
+          "n_retrain": 178,
+          "n_test": 44,
+          "chosen_epoch": 60,
+          "inner_val_f1_macro": 0.8819662138627656,
+          "test": {
+            "loss": 0.11446443437175317,
+            "accuracy": 0.9545454545454546,
+            "f1_macro": 0.9388798701298702,
+            "f1_per_class": [
+              0.9714285714285714,
+              1.0,
+              0.875,
+              0.9090909090909091
+            ],
+            "support": [
+              18,
+              13,
+              7,
+              6
+            ]
+          },
+          "peak_cuda_mb": 2367.4814453125,
+          "fold": 5
+        }
+      ],
+      "summary": {
+        "f1_macro_mean": 0.8926167343079108,
+        "f1_macro_std": 0.02554237634110611,
+        "accuracy_mean": 0.9099999999999999,
+        "accuracy_std": 0.02445696315219648,
+        "f1_per_class_mean": [
+          0.9167623085270143,
+          0.956996336996337,
+          0.7721794871794871,
+          0.9245288045288046
+        ]
+      }
+    }
+  }
+}

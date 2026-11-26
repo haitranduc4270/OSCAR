@@ -1,7 +1,7 @@
 """Retrain TokenOSCAR 256x32 on BRCA folds and save weights for biomarker analysis.
 
 Reproduces the retrain stage of train_five_fold.run_oscar_fold with the epoch chosen by
-the matched run (lightning_logs/token_oscar_sweep/t256_m32/report.json), then checks the
+the matched run (lightning_logs/token_oscar_sweep_v2/t256_m32/report.json), then checks the
 held-out macro-F1 against that report. Weights go to lightning_logs/token_oscar_biomarker/.
 
 Usage:
@@ -18,17 +18,20 @@ import torch
 import yaml
 from sklearn.preprocessing import StandardScaler
 
-from train import set_seed
-from oscar_utils import _read_split_matrix, evaluate as evaluate_oscar, make_loader, run_epoch as run_oscar_epoch
+from oscar_utils import (
+    _read_split_matrix, configure_runtime, evaluate as evaluate_oscar, make_loader,
+    run_epoch as run_oscar_epoch, set_seed,
+)
 from train_token_oscar_matched import COHORTS, _stems, build_token_oscar, load_fold
 
-REPORT = Path("lightning_logs/token_oscar_sweep/t256_m32/report.json")
+REPORT = Path("lightning_logs/token_oscar_sweep_v2/t256_m32/report.json")
 OUT_DIR = Path("lightning_logs/token_oscar_biomarker")
 COHORT = "BRCA"
 NUM_TOKENS, TOKEN_DIM, D_MID, N_HEADS = 256, 32, 256, 4
 
 
 def main() -> None:
+    configure_runtime()
     spec = COHORTS[COHORT]
     oscar_cfg = yaml.safe_load(open(spec["oscar"]))
     seed = int(oscar_cfg["train"]["seed"])
