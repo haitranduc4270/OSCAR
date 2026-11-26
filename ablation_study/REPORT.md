@@ -71,15 +71,18 @@ Bản **TokenOSCAR (full)** gồm đầy đủ 2 khối tương tác có gate: *
 
 ## 3. Table 5.3 — Effect of Cross-Attention Order
 
-*(Chạy trên bản Full có cross gate, self gate,* `pos_embed`*, và* `use_original_for_proteomics = true` *thống nhất trên cả 3 cohort.)*
+*(Chạy đủ cả 6 hoán vị chuỗi mở 2 cạnh trên bản Full có cross gate, self gate,* `pos_embed`*, và* `use_original_for_proteomics = true` *thống nhất trên cả 3 cohort.)*
 
 ### Accuracy (%, mean ± std)
 
 
 | Ordering                                                 | BRCA             | LUNG             | COADREAD         | Avg Acc   | Δ vs Bio |
 | -------------------------------------------------------- | ---------------- | ---------------- | ---------------- | --------- | -------- |
+| Transcriptomics → proteomics → genomics                  | 91.00 ± 1.30     | 96.77 ± 1.37     | 89.65 ± 2.28     | 92.47     | -0.78    |
+| Proteomics → genomics → transcriptomics                  | 90.41 ± 1.99     | 96.34 ± 1.22     | 91.02 ± 4.44     | 92.59     | -0.66    |
 | Proteomics → transcriptomics → genomics (reverse)        | **91.98 ± 1.69** | 95.89 ± 1.00     | 90.55 ± 1.66     | 92.80     | -0.45    |
 | Transcriptomics → genomics → proteomics (mixed)          | 90.41 ± 2.00     | 96.92 ± 1.57     | **91.46 ± 3.56** | 92.93     | -0.32    |
+| Genomics → proteomics → transcriptomics                  | 91.39 ± 2.10     | 96.93 ± 2.18     | 90.57 ± 3.24     | 92.96     | -0.29    |
 | **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 91.39 ± 2.18     | **97.36 ± 1.28** | 91.00 ± 2.45     | **93.25** | **0.00** |
 
 
@@ -90,9 +93,20 @@ Bản **TokenOSCAR (full)** gồm đầy đủ 2 khối tương tác có gate: *
 
 | Ordering                                                 | BRCA             | LUNG             | COADREAD         | Avg F1    | Δ vs Bio |
 | -------------------------------------------------------- | ---------------- | ---------------- | ---------------- | --------- | -------- |
-| Proteomics → transcriptomics → genomics (reverse)        | **90.85 ± 2.34** | 95.87 ± 1.02     | 89.62 ± 1.35     | 92.11     | -0.07    |
+| Proteomics → genomics → transcriptomics                  | 88.70 ± 2.47     | 96.32 ± 1.23     | 89.06 ± 4.88     | 91.36     | -0.82    |
+| Transcriptomics → proteomics → genomics                  | 89.21 ± 1.95     | 96.75 ± 1.38     | 88.52 ± 1.87     | 91.49     | -0.69    |
 | Transcriptomics → genomics → proteomics (mixed)          | 88.76 ± 2.91     | 96.91 ± 1.58     | **90.05 ± 3.42** | 91.91     | -0.27    |
+| Genomics → proteomics → transcriptomics                  | 90.15 ± 2.62     | 96.91 ± 2.20     | 88.69 ± 3.74     | 91.92     | -0.26    |
+| Proteomics → transcriptomics → genomics (reverse)        | **90.85 ± 2.34** | 95.87 ± 1.02     | 89.62 ± 1.35     | 92.11     | -0.07    |
 | **Genomics → transcriptomics → proteomics (TokenOSCAR)** | 89.93 ± 2.15     | **97.34 ± 1.30** | 89.26 ± 2.55     | **92.18** | **0.00** |
+
+**Nhận xét:**
+
+- **Thứ tự sinh học (`CNV → mRNA → Proteomics`) đứng hạng #1 trên toàn bộ 6 hoán vị:** Đạt trung bình cao nhất trên cả Accuracy (**93.25%**, hơn 5 hoán vị còn lại từ `+0.29` đến `+0.78%`) lẫn Macro-F1 (**92.18%**, hơn từ `+0.07` đến `+0.82%`).
+- **Tác động theo từng cohort:** Một số hoán vị có thể nhỉnh hơn cục bộ trên 1 cohort (như `reverse` cao nhất trên BRCA với `91.98%` Acc / `90.85%` F1, hay `mRNA → CNV → Proteomics` cao nhất trên COADREAD với `91.46%` Acc / `90.05%` F1), nhưng lại đánh đổi ở cohort khác (`reverse` tụt mạnh trên LUNG xuống `95.89%`; `mRNA → CNV → Proteomics` tụt trên BRCA xuống `88.76%` F1). Ngược lại, thứ tự sinh học `CNV → mRNA → Proteomics` cân bằng và ổn định nhất trên cả 3 cohort.
+- **Nhóm bắt đầu từ `CNV` (`Genomics`) đều nằm top đầu về Accuracy:** Cả hai thứ tự mở đầu bằng `CNV` (`CNV → mRNA → Proteomics` `93.25%` và `CNV → Proteomics → mRNA` `92.96%`) đều dẫn đầu về Avg Acc, cho thấy dùng thông tin bộ gen làm nguồn ngữ cảnh đầu tiên giúp ổn định quá trình enrich các tầng biểu hiện phía sau.
+
+*(Dữ liệu chi tiết từng fold cho 3 hoán vị bổ sung lưu tại* `lightning_logs/token_oscar_cross_3edge/report.json`*.)*
 
 
 ---

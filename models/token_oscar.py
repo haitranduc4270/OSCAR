@@ -106,6 +106,7 @@ class TokenOSCARModel(BaseLightningModel):
         use_original_for_proteomics: bool = True,
         use_self_attention: bool = True,
         cross_order: tuple[str, str, str] = ("CNV", "mRNA", "Proteomics"),
+        cross_edges: list[tuple[str, str]] | None = None,
         use_self_gate: bool = True,
         use_pos_embed: bool = True,
     ):
@@ -125,6 +126,7 @@ class TokenOSCARModel(BaseLightningModel):
         self.use_self_gate = use_self_gate
         self.use_pos_embed = use_pos_embed
         self.cross_order = tuple(cross_order)
+        self.cross_edges = [tuple(e) for e in cross_edges] if cross_edges is not None else None
 
         self.encoders = nn.ModuleDict(
             {
@@ -140,11 +142,20 @@ class TokenOSCARModel(BaseLightningModel):
         )
 
         if self.use_cross_attention:
-            self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout)
-            self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout)
-            if self.use_gated_fusion:
-                self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout)
-                self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout)
+            if self.cross_edges is not None:
+                self.cross_layers = nn.ModuleList(
+                    [TokenCrossAttention(token_dim, n_heads, dropout) for _ in self.cross_edges]
+                )
+                if self.use_gated_fusion:
+                    self.cross_gates = nn.ModuleList(
+                        [TokenGatedFusion(token_dim, token_dim * 2, dropout) for _ in self.cross_edges]
+                    )
+            else:
+                self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout)
+                self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout)
+                if self.use_gated_fusion:
+                    self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout)
+                    self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout)
 
         if self.use_self_attention:
             self.modality_embed = nn.ParameterDict(
@@ -191,20 +202,30 @@ class TokenOSCARModel(BaseLightningModel):
         tokens = {name: self.encoders[name](batch[name]) for name in self.valid_omics}
 
         if self.use_cross_attention:
-            o1, o2, o3 = self.cross_order
-            o2_orig = tokens[o2]
-            o3_orig = tokens[o3]
+            if self.cross_edges is not None:
+                orig_tokens = dict(tokens)
+                for idx, (src, dst) in enumerate(self.cross_edges):
+                    q_orig = orig_tokens[dst]
+                    kv = orig_tokens[src] if self.use_original_for_proteomics else tokens[src]
+                    enh = self.cross_layers[idx](query=q_orig, key_value=kv)
+                    tokens[dst] = (
+                        self.cross_gates[idx](q_orig, enh) if self.use_gated_fusion else enh
+                    )
+            else:
+                o1, o2, o3 = self.cross_order
+                o2_orig = tokens[o2]
+                o3_orig = tokens[o3]
 
-            o2_enh = self.cross_cnv_to_mrna(query=o2_orig, key_value=tokens[o1])
-            tokens[o2] = (
-                self.gate_mrna(o2_orig, o2_enh) if self.use_gated_fusion else o2_enh
-            )
+                o2_enh = self.cross_cnv_to_mrna(query=o2_orig, key_value=tokens[o1])
+                tokens[o2] = (
+                    self.gate_mrna(o2_orig, o2_enh) if self.use_gated_fusion else o2_enh
+                )
 
-            o2_for_o3 = o2_orig if self.use_original_for_proteomics else tokens[o2]
-            o3_enh = self.cross_mrna_to_prot(query=o3_orig, key_value=o2_for_o3)
-            tokens[o3] = (
-                self.gate_prot(o3_orig, o3_enh) if self.use_gated_fusion else o3_enh
-            )
+                o2_for_o3 = o2_orig if self.use_original_for_proteomics else tokens[o2]
+                o3_enh = self.cross_mrna_to_prot(query=o3_orig, key_value=o2_for_o3)
+                tokens[o3] = (
+                    self.gate_prot(o3_orig, o3_enh) if self.use_gated_fusion else o3_enh
+                )
 
         if self.use_self_attention:
             seq = [tokens[name] + self.modality_embed[name] for name in self.valid_omics]
