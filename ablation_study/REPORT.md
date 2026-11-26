@@ -169,7 +169,39 @@ Thí nghiệm khảo sát độ nhạy của **TokenOSCAR (full: cross gate + se
 - **Ở** `1 × 128`**, hai khối attention không phát huy tác dụng:** bản `Full (1 × 128)` thấp hơn cả `Concatenation` (`91.85` vs `92.44` Acc; `90.75` vs `91.15` F1), và việc bỏ hẳn 2 lớp Transformer self-attention lại tăng `+1.00%` Acc / `+0.94%` F1 (`92.85` / `91.69`) do self-attention trên chuỗi 4 token bị thừa tham số.
 - **Ở** `256 × 32`**, cả hai khối attention trở thành động lực cải thiện chính:** bản `Full (256 × 32)` vượt `Concatenation` (`+1.25%` Acc / `+0.74%` F1) và vượt mốc cao nhất của toàn bộ nhóm `1 × 128`; bỏ self-attention làm tụt `-1.69%` Acc / `-1.38%` F1, còn bỏ cross-attention làm tụt `-0.56%` Acc / `-0.80%` F1.
 
-*(Dữ liệu chi tiết từng fold cho* `1 × 128` *lưu tại* `lightning_logs/token_oscar_ablation_1x128/{concat,no_self_attn,no_cross_self_gate_pos}/report.json`*.)*
+*(Dữ liệu chi tiết từng fold cho* `1 × 128` *lưu tại* `lightning_logs/token_oscar_ablation_1x128/{concat,no_cross_self_gate_pos,no_self_attn}/report.json`*.)*
+
+### Kiểm chứng tính tổng quát của `OmicToTokens (256 × 32)` trên các baseline attention (`MOT` & `MoXGATE`)
+
+Để kiểm tra xem mức cải thiện của **TokenOSCAR (`256 × 32`)** có chỉ đến từ bước chiếu đa token hay không, ta thay trực tiếp lớp chiếu single-vector ở đầu vào của hai baseline dựa trên multi-head attention là **MOT** và **MoXGATE** bằng đúng cùng mô-đun `OmicToTokens (T = 256, M = 32, d_mid = 256)`, giữ nguyên toàn bộ kiến trúc attention, hàm loss, optimizer và giao thức 5-fold matched phía sau (`train_baselines_token.py`):
+
+#### Accuracy (%, mean ± std)
+
+| Model | BRCA | LUNG | COADREAD | Avg Acc | Δ vs Orig |
+|---|---|---|---|---|---|
+| MOT *(orig)* | 90.80 ± 2.11 | 95.90 ± 1.51 | 90.11 ± 2.19 | 92.27 | 0.00 |
+| **MOT + `256 × 32`** | **91.58 ± 1.83** | 95.60 ± 1.46 | 90.10 ± 3.31 | **92.43** | **+0.16** |
+| MoXGATE *(orig)* | 89.23 ± 1.65 | 96.04 ± 0.75 | 88.30 ± 2.93 | 91.19 | 0.00 |
+| **MoXGATE + `256 × 32`** | 87.09 ± 1.54 | 96.04 ± 1.28 | **89.65 ± 4.15** | 90.93 | -0.27 |
+| **TokenOSCAR (`256 × 32`)** | 91.39 ± 2.18 | **97.36 ± 1.28** | **91.00 ± 2.45** | **93.25** | — |
+
+#### Macro-F1 (%, mean ± std)
+
+| Model | BRCA | LUNG | COADREAD | Avg F1 | Δ vs Orig |
+|---|---|---|---|---|---|
+| MOT *(orig)* | 89.28 ± 3.19 | 95.87 ± 1.52 | 87.27 ± 2.13 | 90.81 | 0.00 |
+| **MOT + `256 × 32`** | **89.86 ± 2.89** | 95.58 ± 1.48 | **89.53 ± 2.75** | **91.65** | **+0.85** |
+| MoXGATE *(orig)* | 86.82 ± 2.69 | 96.02 ± 0.76 | 86.09 ± 2.86 | 89.64 | 0.00 |
+| **MoXGATE + `256 × 32`** | 84.27 ± 2.63 | 96.02 ± 1.29 | **89.40 ± 4.60** | **89.90** | **+0.25** |
+| **TokenOSCAR (`256 × 32`)** | **89.93 ± 2.15** | **97.34 ± 1.30** | 89.26 ± 2.55 | **92.18** | — |
+
+**Nhận xét:**
+
+- **Cách chiếu `OmicToTokens (256 × 32)` thực sự mang lại lợi ích, nhưng không tự tạo ra hiệu năng vượt trội một cách độc lập:** Khi gắn cùng bộ projection `256 × 32`, `MOT` tăng rõ về Macro-F1 (`+0.85%`, đặc biệt COADREAD `+2.26%`), còn `MoXGATE` chỉ tăng nhẹ F1 (`+0.25%`) và giảm nhẹ Acc (`-0.27%`, tụt mạnh trên BRCA `-2.55%` F1).
+- **Cần kiến trúc phía sau đủ khả năng khai thác chuỗi token dài:** `MOT` tận dụng tốt hơn `MoXGATE` vì Transformer Encoder 2 lớp có đầy đủ Pre-LN, Residual và FFN; ngược lại, `JointCrossAttention` của `MoXGATE` không có Residual/LayerNorm/FFN và bị phạt Frobenius `λ₂‖W_c‖_F²`, nên dễ bị over-smoothing trên chuỗi 768 token.
+- **Lợi thế của TokenOSCAR đến từ sự kết hợp đồng bộ giữa projection và kiến trúc fusion:** Ngay cả khi đặt trên cùng mặt bằng `256 × 32`, **TokenOSCAR** vẫn vượt cả `MOT + 256 × 32` (`+0.82%` Avg Acc / `+0.53%` Avg F1) lẫn `MoXGATE + 256 × 32` (`+2.32%` Avg Acc / `+2.28%` Avg F1), khẳng định hiệu năng không chỉ đến từ tokenization mà còn cần **ordered cross-attention**, **gated fusion** và **self-attention có gate** để khai thác hiệu quả biểu diễn đa token.
+
+*(Dữ liệu chi tiết từng fold lưu tại* `lightning_logs/baselines_token_256x32/{brca,lung,coadread}_report.json` *và* `lightning_logs/baselines_token_256x32/table.md`*.)*
 
 ---
 
@@ -232,6 +264,9 @@ done
 for v in concat no_self_attn no_cross_self_gate_pos; do
   uv run python train_token_oscar_ablation.py --cohort all --variants $v --num-tokens 1 --token-dim 128 --out-dir lightning_logs/token_oscar_ablation_1x128/$v
 done
+
+# Kiểm chứng gắn OmicToTokens (256x32) vào MOT và MoXGATE
+uv run python train_baselines_token.py --cohort all --models mot,moxgate
 
 # Chạy Enrichr (Table 5.4) cho TokenOSCAR (256x32)
 uv run --with gseapy python metrix/biomarker_step3_enrichment.py \
