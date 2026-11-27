@@ -70,17 +70,30 @@ class TokenCrossAttention(nn.Module):
 class TokenGatedFusion(nn.Module):
     """Token-wise gated fusion between original and cross-attended (B, T, M)."""
 
-    def __init__(self, embed_dim: int, hidden_dim: int = 64, dropout: float = 0.4):
+    def __init__(
+        self,
+        embed_dim: int,
+        hidden_dim: int = 64,
+        dropout: float = 0.4,
+        fixed_gate_value: float | None = None,
+    ):
         super().__init__()
-        self.gate = nn.Sequential(
-            nn.Linear(embed_dim * 2, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, embed_dim),
-            nn.Sigmoid(),
-        )
+        self.fixed_gate_value = fixed_gate_value
+        if fixed_gate_value is None:
+            self.gate = nn.Sequential(
+                nn.Linear(embed_dim * 2, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(hidden_dim, embed_dim),
+                nn.Sigmoid(),
+            )
+        else:
+            self.gate = None
 
     def forward(self, original: torch.Tensor, enhanced: torch.Tensor) -> torch.Tensor:
+        if self.fixed_gate_value is not None:
+            g = self.fixed_gate_value
+            return g * enhanced + (1.0 - g) * original
         g = self.gate(torch.cat([original, enhanced], dim=-1))
         return g * enhanced + (1.0 - g) * original
 
@@ -109,6 +122,7 @@ class TokenOSCARModel(BaseLightningModel):
         cross_edges: list[tuple[str, str]] | None = None,
         use_self_gate: bool = True,
         use_pos_embed: bool = True,
+        fixed_gate_value: float | None = None,
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
@@ -148,14 +162,17 @@ class TokenOSCARModel(BaseLightningModel):
                 )
                 if self.use_gated_fusion:
                     self.cross_gates = nn.ModuleList(
-                        [TokenGatedFusion(token_dim, token_dim * 2, dropout) for _ in self.cross_edges]
+                        [
+                            TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
+                            for _ in self.cross_edges
+                        ]
                     )
             else:
                 self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout)
                 self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout)
                 if self.use_gated_fusion:
-                    self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout)
-                    self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout)
+                    self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
+                    self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
 
         if self.use_self_attention:
             self.modality_embed = nn.ParameterDict(
@@ -186,7 +203,7 @@ class TokenOSCARModel(BaseLightningModel):
             )
             if self.use_self_gate:
                 # Token-wise gated residual on the self-attention output (same form as cross-attn gate).
-                self.self_gate = TokenGatedFusion(token_dim, token_dim * 2, dropout)
+                self.self_gate = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
             clf_in_dim = token_dim
         else:
             clf_in_dim = token_dim * len(self.valid_omics)
