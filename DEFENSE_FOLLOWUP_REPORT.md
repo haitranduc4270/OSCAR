@@ -94,7 +94,7 @@
 - **LUNG ($N=682$, OOF Acc `97.36%`, OOF F1 `97.35%`, Fold F1 `97.34 ± 1.30%`):**
   - LUAD: 354/359 (98.6%), LUSC: 310/323 (96.0%).
 - **COADREAD ($N=222$, OOF Acc `90.99%`, OOF F1 `89.52%`, Fold F1 `89.26 ± 2.55%`):**
-  - CMS1: 79/86, CMS2: 66/69, CMS3: 27/34 (lớp khó nhất, hay nhầm với CMS1), CMS4: 30/33.
+  - Mapping chuẩn theo tần suất trong Table 3.1 (`0=CMS2, 1=CMS4, 2=CMS3, 3=CMS1`): **CMS2: 79/86 (91.9%)**, **CMS4: 66/69 (95.7%)**, **CMS3: 27/34 (79.4% — lớp khó nhất, chủ yếu nhầm sang CMS2, khớp sinh học vì cả CMS2 và CMS3 đều là nhóm biểu mô)**, **CMS1: 30/33 (90.9%)**.
 
 ---
 
