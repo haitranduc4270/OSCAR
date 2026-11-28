@@ -369,6 +369,67 @@ Dữ liệu tổng hợp 4 lớp có $a = c \cdot z_1$ (cần tương tác `{CNV
 - **Xác nhận đúng giả thuyết overfit RPPA trên COADREAD:** Thu gọn RPPA giúp `pw_tok_hallmark` bật tăng **`+5.43%`–`+5.60%`** (`80.23% -> 85.83%`, chỉ `202K` params) và `pw_tok_kegg` tăng **`+8.72%`–`+8.74%`** (`75.67% -> 84.41%`).
 - **Nhóm cả 3 omics với Pathformer + residual (`pw_bn_pathformer_res_all3`)** đạt **`89.34%` BRCA** (cao nhất trong toàn bộ họ pathway, sát `89.93%` baseline) và **`89.75%` COADREAD** (vượt baseline `89.26%`, Avg **`91.61%`**).
 
+---
+
+## 11. Exp 11 — Control Khớp Số Tham Số (~16.4M BRCA / ~18.1M LUNG & COADREAD) (Gỡ Điểm 1 & 2)
+
+**Script, Kết quả & Báo cáo chi tiết:**
+- `experiments/run_exp11_param_matched_controls.py`
+- `experiments/defense_followup/exp11_param_matched/param_matched_results.json`
+- Báo cáo chi tiết: `ablation_study/EXP11_PARAM_MATCHED_CONTROLS.md`
+
+**Thiết kế:** Tìm kiếm nhị phân `d_mid` riêng cho từng baseline trên từng cohort để khớp tổng số tham số trong khoảng **`±0.14%`** so với `TokenOSCAR 256×32` (`16.42M` BRCA, `18.06M` LUNG/COADREAD), chạy đủ matched nested 5-fold CV trên cả 3 cohort (15 run/cấu hình).
+
+| Mô hình (khớp số tham số) | `d_mid` (BRCA/LUNG/COAD) | Params BRCA (`Δ%`) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Δ vs `256×32` |
+|---|---|---|---|---|---|---|---|
+| **`TokenOSCAR 256×32` (tham chiếu)** | `256 / 256 / 256` | `16,420,996` (`0.00%`) | **89.93 ± 2.15%** | **97.34 ± 1.30%** | **89.26 ± 2.55%** | **92.18%** | — |
+| `mrna_only_mlp_matched` *(no-attn)* | `591 / 628 / 628` | `16,427,957` (`+0.04%`) | 89.90 ± 3.02% | 95.13 ± 1.52% | **89.26 ± 5.20%** | 91.43% | **-0.74%** |
+| `full_1x128_matched` *(1 token + attn)* | `388 / 370 / 370` | `16,422,328` (`+0.01%`) | 88.40 ± 3.54% | 95.58 ± 1.54% | 89.09 ± 3.07% | 91.03% | **-1.15%** |
+| `concat_1x128_matched` *(no-attn)* | `415 / 393 / 393` | `16,429,815` (`+0.05%`) | 89.88 ± 2.08% | 95.88 ± 1.44% | 86.56 ± 7.15% | 90.77% | **-1.40%** |
+| `concat_256x32_matched` *(no-attn)* | `257 / 257 / 257` | `16,398,385` (`-0.14%`) | 87.06 ± 2.13% | 95.73 ± 1.64% | 84.77 ± 6.03% | 89.19% | **-2.99%** |
+
+**Kết luận rút ra:** Ở cùng ngân sách tham số (`±0.14%`), `TokenOSCAR 256×32` vẫn đứng **#1 trên cả 3 cohort** (`92.18%` Avg F1, vượt **`+0.74%` đến `+2.99%`** so với các đối chứng khớp dung lượng), tách rạch ròi lợi ích của **đa token + cross/self-attention có gate** khỏi dung lượng tham số.
+
+---
+
+## 12. Exp 12 — Kiểm chứng Readout Đối xứng trên Synthetic Reverse Control `S1_control_rev_2edge` (Gỡ Điểm 5)
+
+**Script, Kết quả & Báo cáo chi tiết:**
+- `experiments/run_exp12_synth_rev_readout.py`
+- `experiments/defense_followup/exp12_synth_rev_readout/synth_rev_readout_results.json`
+- Báo cáo chi tiết: `ablation_study/EXP12_SYNTH_REV_READOUT.md`
+
+| Biến thể Synthetic (5 seeds) | Cạnh cố định | Cascade | Readout | Test Macro-F1 |
+|---|---|---|---|---|
+| `S1_control_rev_2edge_prot_readout` *(Exp 9 gốc)* | `Prot → mRNA → CNV` | 2-step | Chỉ nút `Proteomics` | 24.10 ± 3.22% |
+| **`S1_control_rev_2edge_sym_readout`** | `Prot → mRNA → CNV` | 2-step | **Đối xứng `[G, T, P]`** | **100.00 ± 0.00%** |
+| **`S1_control_rev_2edge_1step_sym`** | `Prot → mRNA → CNV` | 1-step | **Đối xứng `[G, T, P]`** | **100.00 ± 0.00%** |
+| **`S1_control_rev_2edge_cnv_readout`** | `Prot → mRNA → CNV` | 2-step | Nút cuối chiều ngược `CNV` | **100.00 ± 0.00%** |
+| `S1_control_bio_2edge_sym_readout` | `CNV → mRNA → Prot` | 2-step | Đối xứng `[G, T, P]` | **100.00 ± 0.00%** |
+
+**Kết luận rút ra:** Mức F1 `24.10%` ở `S1_control_rev_2edge` trong Exp 9 **hoàn toàn do readout chỉ đọc nút `Proteomics`** (bậc vào = 0 dưới chiều ngược); khi dùng **readout đối xứng `[G, T, P]`** (hoặc nút cuối chiều ngược `CNV`), chiều ngược đạt **`100.00 ± 0.00%` trên cả 5/5 seed**.
+
+---
+
+## 13. Exp 13 — Learning Curves & Kiểm toán Regularization trên BRCA (`N=511`, `16.42M` params) (Gỡ Điểm 7)
+
+**Script, Kết quả, Hình ảnh & Báo cáo chi tiết:**
+- `experiments/run_exp13_brca_learning_curves_reg.py`
+- `experiments/defense_followup/exp13_brca_learning_curves/brca_learning_curves_reg.json`
+- Biểu đồ: `ablation_study/brca_learning_curves.png`
+- Báo cáo chi tiết: `ablation_study/EXP13_BRCA_LEARNING_CURVES_REG.md`
+
+| Cấu hình trên BRCA (`16.42M` params) | `chosen_epoch` (5 folds) | Mean Epoch | Test Macro-F1 | Test Acc | Δ F1 vs Default |
+|---|---|---|---|---|---|
+| **`Default (wd=1e-5, drop=0.4, ES)`** | `[42, 57, 28, 24, 27]` | `35.6` | **89.93 ± 2.15%** | **91.39 ± 2.18%** | — |
+| `wd=1e-4, drop=0.4, ES` | `[42, 57, 28, 24, 27]` | `35.6` | **89.93 ± 2.15%** | **91.39 ± 2.18%** | `0.00%` |
+| `wd=1e-3, drop=0.4, ES` | `[24, 57, 29, 49, 26]` | `37.0` | 89.05 ± 2.71% | 90.41 ± 2.58% | `-0.88%` |
+| `No Dropout (wd=1e-5, drop=0.0, ES)` | `[11, 13, 15, 27, 3]` | `13.8` | 88.70 ± 3.03% | 90.99 ± 2.01% | **`-1.23%`** |
+| `No EarlyStop (ep=120, wd=1e-5, drop=0.4)` | `[120, 120, 120, 120, 120]` | `120.0` | 90.62 ± 2.70% | 91.78 ± 2.21% | `+0.69%` *(std cao hơn)* |
+
+**Kết luận rút ra:** Trên BRCA (`~32k` tham số/mẫu), `inner-val loss` đạt đáy nhất quán quanh epoch `22–27` (`0.24–0.27`) rồi tăng dần lên `0.43–0.62` (calibration drift) nhưng **`inner-val Macro-F1` vẫn giữ cao nguyên phẳng `~89–90%`** đến epoch 120. **Dropout (`p=0.4`)** là yếu tố điều chuẩn chủ lực (tắt dropout làm mô hình memorize sớm gấp ~3×, giảm `-1.23%` F1 và tăng std lên `±3.03%`), còn **inner-val early stopping (`mean ep = 35.6`)** dừng sát vùng đáy `val_loss` giúp giữ phương sai giữa các fold gọn nhất (`±2.15%`).
+
+
 
 
 
