@@ -268,4 +268,108 @@ Khi tách riêng nhóm gen giảm biểu hiện trong Luminal A (tránh trộn l
 - **Về thay thế Softmax:** `Sigmoid` (`91.68%`) và `Sparsemax` (`91.48%`) là hai lựa chọn thay thế ổn định nhất (`Sparsemax` giảm mạnh phương sai trên cả 3 tập xuống `±0.99%–1.70%`), trong khi `Sinkhorn` (`90.67%`) và `Linear ELU+1` (`90.13%`, COADREAD `±10.83%`) kém ổn định hơn.
 - **Về Tokenizer `OmicToTokens`:** Tăng bottleneck lên `d_mid=512` gấp đôi số tham số (`32.7M`) nhưng lại **giảm -1.36% Avg F1** (overfit mạnh trên COADREAD `86.05%`), khẳng định `d_mid=256` đã là điểm bão hòa tối ưu.
 
+---
+
+## 9. Exp 9 — Tự học thứ tự/cạnh có hướng (`Learnable Directed Edge-Gated TokenOSCAR`) (Trả lời sâu Q7)
+
+**Script & File kết quả:**
+
+- `experiments/run_exp9_learned_order.py`
+- `experiments/defense_followup/exp9_learned_order/exp9_learned_order_results.json`
+
+**Thiết kế:** Thay 2 cạnh cố định bằng 6 logit cạnh có hướng $A \in \mathbb{R}^6$ ($G_e = \sigma(A_e/\tau)$, $\tau: 1.0 \to 0.25$ theo `max_epochs`, `edge_lr = 0.05`, `weight_decay = 0`), tách đúng phần residual cập nhật qua `LayerNorm(elementwise_affine=False)` để chống gian lận tỷ lệ:
+$$Z_j^{\text{new}} = Z_j + \sum_{i \neq j} G_{i \to j} \cdot \left(\alpha_{i \to j} \odot \text{LN}_{\text{no-affine}}(\Delta_{i \to j})\right)$$
+với phạt phi chu trình chính xác cho 3 đỉnh $h(G) = (G_{01}G_{10}+G_{02}G_{20}+G_{12}G_{21}) + (G_{01}G_{12}G_{20}+G_{02}G_{21}G_{10})$.
+
+### 9.1. Đối chứng dương trên dữ liệu tổng hợp (XOR Chain `CNV → mRNA → Proteomics`, 5 seeds)
+
+Dữ liệu tổng hợp 4 lớp có $a = c \cdot z_1$ (cần tương tác `{CNV, mRNA}`), $b = m \cdot z_2$ (cần `{mRNA, Proteomics}`), `{CNV, Proteomics}` không chia sẻ yếu tố nào; LogReg đơn omic lẫn concat tuyến tính đều ở mức ngẫu nhiên (`CNV 24.9%`, `mRNA 26.9%`, `Proteomics 21.1%`, `Concat LogReg 21.5%`).
+
+| Thiết lập tổng hợp | Test F1 (5 seeds) | Skeleton đúng | Ma trận gate $G$ trung bình (`0→1, 0→2, 1→0, 1→2, 2→0, 2→1`) |
+|---|---|---|---|
+| `S1_control_bio_2edge` (oracle `0→1→2`, 2-step, readout Prot) | **100.00 ± 0.00%** | 5/5 | `1.00, 0.00, 0.00, 1.00, 0.00, 0.00` |
+| `S1_control_rev_2edge` (ngược `2→1→0`, 2-step, readout Prot) | 24.10 ± 3.22% | 5/5 | `0.00, 0.00, 1.00, 0.00, 0.00, 1.00` |
+| `S1_learned_budget2_dag` (tự học, 2-step, readout Prot) | **100.00 ± 0.00%** | 0/5 *(collider)* | `0.00, 1.00, 0.00, 1.00, 0.00, 0.00` *(chọn `CNV→Prot←mRNA` 5/5)* |
+| `S2_symmetric_readout_budget2` (1-step, readout đối xứng) | **100.00 ± 0.00%** | **5/5 (100%)** | `0.00, 0.00, 1.00, 0.80, 0.00, 0.20` *(cắt sạch `{CNV,Prot}` = 0.00)* |
+| `S3_full_selfattn_l1_dag` (Full + `lam1 * G.sum()`) | **100.00 ± 0.00%** | 0/5 *(collapse)* | `0.00, 0.00, 0.00, 0.00, 0.00, 0.00` *(sập về 0 do đường tắt SA)* |
+| `S3_full_selfattn_budget2_dag` (Full + `Budget2+DAG`) | **100.00 ± 0.00%** | **4/5 (80%)** | `0.20, 0.20, 0.60, 1.00, 0.00, 0.00` |
+
+**Phát hiện từ đối chứng dương:**
+1. Phạt thưa `lam1 * G.sum()` khi có 2 tầng Self-Attention phía sau (`S3_full_selfattn_l1_dag`) bị **đường tắt Self-Attention đánh sập cả 6 gate về `0.00`**; ràng buộc ngân sách `Budget2+DAG` khắc phục hoàn toàn và khôi phục đúng khung tương tác (`4/5` ở `S3`, `5/5` ở `S2`).
+2. `S1_learned_budget2_dag` chứng minh trực quan điểm phương pháp luận: chỉ từ nhãn phân loại, mô hình chọn **cấu trúc dự đoán ngắn nhất** (collider 1-hop `CNV → Prot ← mRNA`, 5/5 seed) thay vì chuỗi nhân quả 2-hop `CNV → mRNA → Prot`.
+
+### 9.2. Kết quả trên TCGA (3 seeds `42, 123, 2024` × 5 folds = 15 folds/cohort; 45 folds tổng)
+
+| Mô hình (15 folds/cohort, 3 seeds) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Δ vs Bio 2-edge |
+|---|---|---|---|---|---|
+| **`TokenOSCAR (Fixed Bio 2-edge, Exp 5)`** | **89.84 ± 2.95%** | 96.66 ± 1.52% | 89.00 ± 4.13% | **91.83%** | — |
+| `Reverse (Fixed 2-edge, Exp 5)` | 89.62 ± 3.24% | 96.32 ± 1.32% | **89.37 ± 4.03%** | 91.77% | -0.06% |
+| `all2all_norm_fixed` (6 cạnh cố định $G=1$) | 89.36 ± 2.59% | 96.27 ± 1.22% | 88.37 ± 3.80% | 91.33% | -0.50% |
+| `learned_edge_free` (tự học 6 cạnh, thuần CE) | 89.44 ± 2.51% | **97.25 ± 1.29%** | 86.45 ± 4.28% | 91.05% | -0.78% |
+| `learned_edge_budget2_dag` (tự học 2 cạnh DAG) | 89.15 ± 3.11% | 96.37 ± 1.25% | 87.33 ± 3.16% | 90.95% | -0.88% |
+
+### 9.3. Cấu trúc cạnh học được qua 45 folds (3 cohorts × 3 seeds × 5 folds, chỉ học trên tập train)
+
+| Cạnh có hướng | `learned_edge_free` Mean (tần suất > 0.5) | `learned_edge_budget2_dag` Mean (tần suất > 0.5) |
+|---|---|---|
+| `mRNA → Proteomics` | **0.962 ± 0.043** (`45/45 = 100.0%`) | **0.993 ± 0.011** (`45/45 = 100.0%`) |
+| `mRNA → CNV` | **0.948 ± 0.082** (`45/45 = 100.0%`) | **0.950 ± 0.205** (`43/45 = 95.6%`) |
+| `Proteomics → mRNA` | 0.717 ± 0.190 (`37/45 = 82.2%`) | 0.001 ± 0.002 (`0/45 = 0.0%`) |
+| `CNV → mRNA` | 0.459 ± 0.270 (`16/45 = 35.6%`) | 0.001 ± 0.001 (`0/45 = 0.0%`) |
+| `Proteomics → CNV` | 0.415 ± 0.291 (`15/45 = 33.3%`) | 0.004 ± 0.007 (`0/45 = 0.0%`) |
+| `CNV → Proteomics` | 0.232 ± 0.117 (`1/45 = 2.2%`) | 0.048 ± 0.205 (`2/45 = 4.4%`) |
+
+**Kết luận rút ra (Exp 9):**
+- **Phát hiện cực kỳ nhất quán (43–45/45 fold):** Dưới thuần nhãn phân loại, mô hình **không** tự khôi phục chuỗi Central Dogma (`CNV → mRNA → Proteomics`), mà hội tụ gần như tuyệt đối vào cấu trúc **nhánh tỏa từ mRNA (`CNV ← mRNA → Proteomics`)** (`mRNA → Proteomics` `100%`, `mRNA → CNV` `95.6–100%`, còn cặp trực tiếp `CNV ↔ Proteomics` gần như bị loại hoàn toàn). Điều này phản ánh đúng thứ hạng SNR của 3 omic (mRNA `91.4%` > Proteomics `76.4%` > CNV `55.2%`): gradient phân loại ưu tiên phát tín hiệu từ omic mạnh nhất (`mRNA`) sang 2 omic yếu hơn.
+- **Nhưng tự học cạnh KHÔNG thắng cố định thứ tự sinh học (và thậm chí kém hơn cả `all2all_norm_fixed`):** Trên trung bình 3 cohort (45 fold), `TokenOSCAR (Fixed Bio 2-edge)` (**91.83%**) vượt cả `all2all_norm_fixed` (**91.33%**, -0.50%), `learned_edge_free` (**91.05%**, -0.78%) lẫn `learned_edge_budget2_dag` (**90.95%**, -0.88%). Trên COADREAD ($N=222$), việc mô hình tự khuếch đại nhánh `mRNA → {CNV, Proteomics}` kéo hiệu năng về sát mức `mRNA_only` (`86.45–87.33%` vs `mRNA_only 86.77%`), làm mất tính bổ trợ của CNV/Proteomics so với cố định `CNV → mRNA → Proteomics` (**89.00%**). Riêng trên LUNG, `learned_edge_free` đạt **97.25%** (+0.59% so với Bio 2-edge) nhờ giữ thêm `Proteomics → mRNA` (0.90) và `Proteomics → CNV` (0.74).
+- **Ý nghĩa bảo vệ luận văn:** Biện minh trực tiếp cho thiết kế cố định 2 cạnh sinh học gọn gàng làm inductive bias — đồng thời chứng minh bằng thực nghiệm rằng để học hướng nhân quả sinh học thực sự từ dữ liệu, thuần nhãn phân loại là không đủ (cần tín hiệu giám sát chéo giữa các tầng omic).
+
+---
+
+## 10. Exp 10 — Thay thế `OmicToTokens` bằng Nhóm gen theo Biological Pathway (`PathwayBottleneck` & `PathwayTokens`) (Trả lời sâu Q1, Q15)
+
+**Code & File kết quả:**
+- `models/pathway_tokenizer.py`, `experiments/run_exp10_pathway_tokenizer.py`
+- `experiments/defense_followup/exp10_pathway_tokenizer/exp10_results.json`
+- Báo cáo chi tiết: `ablation_study/EXP10_PATHWAY_TOKENIZER.md`
+
+**Thiết kế:** Thay bộ mã hóa dày `OmicToTokens` cho `mRNA` và `CNV` bằng hai cơ chế thưa theo pathway (giữ nguyên `OmicToTokens` cho RPPA để bảo toàn phospho-protein):
+- **Pathway-Bottleneck (`pw_bn_*`):** Lớp tuyến tính thưa gen $\to$ $P$ pathway (`edge-indexed index_add_`, khởi tạo fan-in $1/\sqrt{\text{deg}_p}$) thay cho `Linear(D, 256)`, sau đó chiếu ra `(B, 256, 32)` (+ biến thể `pw_bn_pathformer_res` bổ sung nhánh residual 64 chiều cho các gen ngoài pathway).
+- **Pathway-as-Tokens (`pw_tok_*`):** Mỗi pathway gom trực tiếp gen thành viên qua $K=8$ chiếu học được $\to$ MLP chia sẻ $\to$ `(B, P, 32)` đưa thẳng vào Cross/Self-Attention (`RPPA` chiếu sang $T_P=P$ token).
+
+| Biến thể Tokenizer | Params (BRCA) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Δ vs Default |
+|---|---|---|---|---|---|---|
+| **`TokenOSCAR (OmicToTokens 256×32)`** | 16,420,996 | **89.93 ± 2.15%** | 97.34 ± 1.30% | 89.26 ± 2.55% | **92.18%** | — |
+| `pw_bn_pathformer_res` (`P=1,497` + 64-dim unmapped) | 29,063,500 | 88.77 ± 2.95% | 96.46 ± 2.01% | **90.04 ± 5.86%** | 91.76% | **-0.42%** |
+| `pw_bn_pathformer` (`P=1,497`, 52–59% gen) | 26,984,076 | 86.97 ± 3.19% | 97.64 ± 1.19% | 88.46 ± 5.00% | 91.02% | -1.16% |
+| `pw_bn_hallmark` (`P=50`, 21–23% gen) | 3,112,917 | 85.00 ± 2.73% | 97.49 ± 1.11% | 84.00 ± 4.59% | 88.83% | -3.35% |
+| `pw_bn_kegg` (`P=146`, 19–25% gen) | 4,691,343 | 86.49 ± 1.33% | 97.79 ± 1.33% | 81.60 ± 6.07% | 88.63% | -3.55% |
+| `pw_tok_hallmark` (`50×32` tokens, **giảm 24.5×**) | **670,124** | 85.85 ± 4.90% | **98.09 ± 0.76%** | 80.23 ± 4.90% | 88.06% | -4.12% |
+| `pw_tok_kegg` (`146×32` tokens, **giảm 10.8×**) | 1,516,412 | 83.79 ± 4.88% | 97.94 ± 0.71% | 75.67 ± 3.53% | 85.80% | -6.38% |
+
+**Kết luận rút ra (Exp 10):**
+- **Trên LUNG (`LUAD` vs `LUSC`), nhóm theo pathway vượt hẳn baseline trên 5/6 biến thể với số tham số siêu nhỏ:** `pw_tok_hallmark` lập kỷ lục **`98.09 ± 0.76%`** (+0.75%, giảm một nửa std) chỉ với **`655K` tham số** (gọn hơn 25× so với `16.4M`).
+- **Trên phân nhóm mịn 4 lớp (`BRCA`, `COADREAD`), giới hạn độ phủ gen (gene coverage) là yếu tố quyết định:** bỏ 40–80% gen ngoài pathway làm tụt điểm rõ rệt; khi nâng độ phủ lên Pathformer (`52–59%`) và khôi phục gen unmapped qua nhánh residual (`pw_bn_pathformer_res`), điểm phục hồi ngay về **`91.76%`** (COADREAD đạt **`90.04%`**, BRCA `88.77%`). Điều này kiểm chứng trực tiếp lập luận Q15 về ưu thế bảo toàn 100% hệ gen của `OmicToTokens`.
+- **So với cắt chunk kiểu ViT (Exp 7c):** `pw_tok_hallmark` (`88.06%`) vượt xa `feature_chunk_64x32` (`84.63%`, +3.43%) và `feature_chunk_256x32` (`65.17%`, +22.89%), khẳng định nhóm theo pathway là cách gom cục bộ hợp lý hơn hẳn về mặt sinh học.
+
+### 10.1. Exp 10b — Thu gọn RPPA (`d_mid=64, T_P=16`) & Nhóm cả 3 Omics theo Pathway (gồm RPPA)
+
+**File kết quả:** `experiments/defense_followup/exp10_pathway_tokenizer/exp10b_results.json` (ánh xạ kháng thể RPPA $\to$ HGNC giữ trọng số cạnh riêng cho từng phospho-site, độ phủ Pathformer `97.8–98.0%`, Hallmark `79.1–83.3%`, KEGG `77.1–79.4%`).
+
+| Biến thể Exp 10b | Params BRCA (RPPA) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Δ vs Default |
+|---|---|---|---|---|---|---|
+| `pw_bn_pathformer_res_all3` (3 omics, `T_P=16`) | 27,680,866 (788K) | **89.34 ± 2.88%** | 95.73 ± 1.50% | **89.75 ± 3.62%** | **91.61%** | **-0.57%** |
+| `pw_bn_pathformer_res_rppa64x16` | 26,940,364 (48K) | 87.18 ± 2.68% | 95.28 ± 1.78% | 86.79 ± 1.99% | 89.75% | -2.43% |
+| `pw_tok_hallmark_rppa64x16` (**gọn 66×**) | 247,724 (48K) | 82.47 ± 3.76% | 97.35 ± 1.00% | 85.66 ± 5.22% | 88.49% | -3.69% |
+| `pw_bn_hallmark_rppa64x16` (gọn 16.6×) | 989,781 (48K) | 84.85 ± 2.32% | 97.49 ± 0.37% | 80.39 ± 7.58% | 87.58% | -4.60% |
+| `pw_tok_hallmark_all3` (**gọn 79×**) | **207,188 (6.1K)** | 80.33 ± 1.79% | 95.58 ± 1.40% | 85.83 ± 3.13% | 87.25% | -4.93% |
+| `pw_tok_kegg_all3` (**gọn 61×**) | 271,148 (13.3K) | 78.96 ± 3.51% | 96.03 ± 1.00% | 84.39 ± 2.35% | 86.46% | -5.72% |
+| `pw_tok_kegg_rppa64x16` (gọn 54×) | 301,436 (48K) | 75.80 ± 7.28% | **97.64 ± 1.28%** | 84.41 ± 2.18% | 85.95% | -6.23% |
+
+- **Xác nhận đúng giả thuyết overfit RPPA trên COADREAD:** Thu gọn RPPA giúp `pw_tok_hallmark` bật tăng **`+5.43%`–`+5.60%`** (`80.23% -> 85.83%`, chỉ `202K` params) và `pw_tok_kegg` tăng **`+8.72%`–`+8.74%`** (`75.67% -> 84.41%`).
+- **Nhóm cả 3 omics với Pathformer + residual (`pw_bn_pathformer_res_all3`)** đạt **`89.34%` BRCA** (cao nhất trong toàn bộ họ pathway, sát `89.93%` baseline) và **`89.75%` COADREAD** (vượt baseline `89.26%`, Avg **`91.61%`**).
+
+
+
+
 

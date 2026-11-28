@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .base import BaseLightningModel
+from .pathway_tokenizer import PathwayBottleneckToTokens, PathwayTokenEncoder
 
 
 class OmicToTokens(nn.Module):
@@ -210,6 +211,16 @@ class TokenGatedFusion(nn.Module):
         return g * enhanced + (1.0 - g) * original
 
 
+ALL_DIRECTED_EDGES: tuple[tuple[str, str], ...] = (
+    ("CNV", "mRNA"),
+    ("CNV", "Proteomics"),
+    ("mRNA", "CNV"),
+    ("mRNA", "Proteomics"),
+    ("Proteomics", "CNV"),
+    ("Proteomics", "mRNA"),
+)
+
+
 class TokenOSCARModel(BaseLightningModel):
     """OSCAR where each omic is a (B, T, M) token sequence throughout fusion."""
 
@@ -236,9 +247,19 @@ class TokenOSCARModel(BaseLightningModel):
         use_pos_embed: bool = True,
         fixed_gate_value: float | None = None,
         num_tokens_per_omic: dict[str, int] | None = None,
+        d_mid_per_omic: dict[str, int] | None = None,
         encoder_type: str = "factorized",
         attn_type: str = "softmax",
         token_layernorm: bool = False,
+        pathway_specs: dict[str, dict] | None = None,
+        pathway_unmapped_dim: int = 0,
+        pathway_unmapped_dim_per_omic: dict[str, int] | None = None,
+        pathway_proj_per_pathway: int = 8,
+        learnable_edges: bool = False,
+        fixed_edge_weights: list[float] | None = None,
+        edge_tau: float = 1.0,
+        edge_cascade_steps: int = 1,
+        readout_omic: str | None = None,
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
@@ -247,6 +268,8 @@ class TokenOSCARModel(BaseLightningModel):
             raise ValueError("use_self_gate requires use_self_attention=True")
         if use_pos_embed and not use_self_attention:
             raise ValueError("use_pos_embed requires use_self_attention=True")
+        if learnable_edges and fixed_edge_weights is not None:
+            raise ValueError("Cannot set both learnable_edges=True and fixed_edge_weights")
 
         self.valid_omics = list(input_dims.keys())
         self.use_cross_attention = use_cross_attention
@@ -256,12 +279,38 @@ class TokenOSCARModel(BaseLightningModel):
         self.use_self_gate = use_self_gate
         self.use_pos_embed = use_pos_embed
         self.cross_order = tuple(cross_order)
-        self.cross_edges = [tuple(e) for e in cross_edges] if cross_edges is not None else None
+        self.learnable_edges = learnable_edges
+        self.use_weighted_edges = learnable_edges or (fixed_edge_weights is not None)
+        self.edge_tau = float(edge_tau)
+        self.edge_cascade_steps = int(edge_cascade_steps)
+        self.readout_omic = readout_omic
+        if self.use_weighted_edges and cross_edges is None:
+            self.cross_edges = list(ALL_DIRECTED_EDGES)
+        else:
+            self.cross_edges = [tuple(e) for e in cross_edges] if cross_edges is not None else None
 
-        self.num_tokens_map = {
-            name: (int(num_tokens_per_omic[name]) if num_tokens_per_omic and name in num_tokens_per_omic else num_tokens)
+        self.num_tokens_map = {}
+        for name in self.valid_omics:
+            if encoder_type == "pathway_tokens" and pathway_specs and name in pathway_specs:
+                self.num_tokens_map[name] = int(pathway_specs[name]["num_pathways"])
+            elif num_tokens_per_omic and name in num_tokens_per_omic:
+                self.num_tokens_map[name] = int(num_tokens_per_omic[name])
+            else:
+                self.num_tokens_map[name] = num_tokens
+
+        self.d_mid_map = {
+            name: (int(d_mid_per_omic[name]) if d_mid_per_omic and name in d_mid_per_omic else d_mid)
             for name in self.valid_omics
         }
+        unmapped_dim_map = {
+            name: (
+                int(pathway_unmapped_dim_per_omic[name])
+                if pathway_unmapped_dim_per_omic and name in pathway_unmapped_dim_per_omic
+                else pathway_unmapped_dim
+            )
+            for name in self.valid_omics
+        }
+
         if encoder_type == "factorized":
             self.encoders = nn.ModuleDict(
                 {
@@ -269,7 +318,7 @@ class TokenOSCARModel(BaseLightningModel):
                         input_dim=input_dims[name],
                         num_tokens=self.num_tokens_map[name],
                         token_dim=token_dim,
-                        d_mid=d_mid,
+                        d_mid=self.d_mid_map[name],
                         dropout=dropout,
                         token_layernorm=token_layernorm,
                     )
@@ -284,6 +333,58 @@ class TokenOSCARModel(BaseLightningModel):
                         num_tokens=self.num_tokens_map[name],
                         token_dim=token_dim,
                         dropout=dropout,
+                    )
+                    for name in self.valid_omics
+                }
+            )
+        elif encoder_type == "pathway_bottleneck":
+            if not pathway_specs:
+                raise ValueError("encoder_type='pathway_bottleneck' requires pathway_specs")
+            self.encoders = nn.ModuleDict(
+                {
+                    name: (
+                        PathwayBottleneckToTokens(
+                            spec=pathway_specs[name],
+                            num_tokens=self.num_tokens_map[name],
+                            token_dim=token_dim,
+                            dropout=dropout,
+                            unmapped_dim=unmapped_dim_map[name],
+                            token_layernorm=token_layernorm,
+                        )
+                        if name in pathway_specs
+                        else OmicToTokens(
+                            input_dim=input_dims[name],
+                            num_tokens=self.num_tokens_map[name],
+                            token_dim=token_dim,
+                            d_mid=self.d_mid_map[name],
+                            dropout=dropout,
+                            token_layernorm=token_layernorm,
+                        )
+                    )
+                    for name in self.valid_omics
+                }
+            )
+        elif encoder_type == "pathway_tokens":
+            if not pathway_specs:
+                raise ValueError("encoder_type='pathway_tokens' requires pathway_specs")
+            self.encoders = nn.ModuleDict(
+                {
+                    name: (
+                        PathwayTokenEncoder(
+                            spec=pathway_specs[name],
+                            token_dim=token_dim,
+                            proj_per_pathway=pathway_proj_per_pathway,
+                            dropout=dropout,
+                        )
+                        if name in pathway_specs
+                        else OmicToTokens(
+                            input_dim=input_dims[name],
+                            num_tokens=self.num_tokens_map[name],
+                            token_dim=token_dim,
+                            d_mid=self.d_mid_map[name],
+                            dropout=dropout,
+                            token_layernorm=token_layernorm,
+                        )
                     )
                     for name in self.valid_omics
                 }
@@ -303,6 +404,19 @@ class TokenOSCARModel(BaseLightningModel):
                             for _ in self.cross_edges
                         ]
                     )
+                if self.use_weighted_edges:
+                    self.edge_delta_norms = nn.ModuleList(
+                        [nn.LayerNorm(token_dim, elementwise_affine=False) for _ in self.cross_edges]
+                    )
+                    if self.learnable_edges:
+                        self.edge_logits = nn.Parameter(torch.zeros(len(self.cross_edges)))
+                    else:
+                        if len(fixed_edge_weights) != len(self.cross_edges):
+                            raise ValueError("fixed_edge_weights length must match cross_edges")
+                        self.register_buffer(
+                            "fixed_edge_gates",
+                            torch.tensor(fixed_edge_weights, dtype=torch.float32),
+                        )
             else:
                 self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout, attn_type=attn_type)
                 self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout, attn_type=attn_type)
@@ -342,7 +456,10 @@ class TokenOSCARModel(BaseLightningModel):
                 self.self_gate = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
             clf_in_dim = token_dim
         else:
-            clf_in_dim = token_dim * len(self.valid_omics)
+            if self.readout_omic is not None:
+                clf_in_dim = token_dim
+            else:
+                clf_in_dim = token_dim * len(self.valid_omics)
 
         self.classifier = nn.Sequential(
             nn.Linear(clf_in_dim, fusion_hidden),
@@ -351,11 +468,56 @@ class TokenOSCARModel(BaseLightningModel):
             nn.Linear(fusion_hidden, num_classes),
         )
 
+    def set_edge_temperature(self, tau: float) -> None:
+        self.edge_tau = float(tau)
+
+    def get_edge_gates(self) -> torch.Tensor:
+        if not self.use_weighted_edges:
+            raise RuntimeError("get_edge_gates requires learnable_edges=True or fixed_edge_weights")
+        if self.learnable_edges:
+            return torch.sigmoid(self.edge_logits / self.edge_tau)
+        return self.fixed_edge_gates
+
+    def edge_acyclicity_penalty(self) -> torch.Tensor:
+        """Exact 3-node acyclicity penalty: sum of all 2-cycle and 3-cycle edge products."""
+        g = self.get_edge_gates()
+        edge_map = {edge: g[idx] for idx, edge in enumerate(self.cross_edges)}
+        o0, o1, o2 = ("CNV", "mRNA", "Proteomics")
+        zero = g.new_tensor(0.0)
+        g01 = edge_map.get((o0, o1), zero)
+        g10 = edge_map.get((o1, o0), zero)
+        g02 = edge_map.get((o0, o2), zero)
+        g20 = edge_map.get((o2, o0), zero)
+        g12 = edge_map.get((o1, o2), zero)
+        g21 = edge_map.get((o2, o1), zero)
+        two_cycles = g01 * g10 + g02 * g20 + g12 * g21
+        three_cycles = g01 * g12 * g20 + g02 * g21 * g10
+        return two_cycles + three_cycles
+
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         tokens = {name: self.encoders[name](batch[name]) for name in self.valid_omics}
 
         if self.use_cross_attention:
-            if self.cross_edges is not None:
+            if self.cross_edges is not None and self.use_weighted_edges:
+                g_edges = self.get_edge_gates()
+                for _ in range(self.edge_cascade_steps):
+                    orig_tokens = dict(tokens)
+                    acc = {name: torch.zeros_like(orig_tokens[name]) for name in self.valid_omics}
+                    for idx, (src, dst) in enumerate(self.cross_edges):
+                        q_orig = orig_tokens[dst]
+                        kv = orig_tokens[src]
+                        enh = self.cross_layers[idx](query=q_orig, key_value=kv)
+                        delta = self.edge_delta_norms[idx](enh - q_orig)
+                        if self.use_gated_fusion:
+                            gate_mod = self.cross_gates[idx]
+                            if gate_mod.fixed_gate_value is not None:
+                                tok_gate = gate_mod.fixed_gate_value
+                            else:
+                                tok_gate = gate_mod.gate(torch.cat([q_orig, enh], dim=-1))
+                            delta = tok_gate * delta
+                        acc[dst] = acc[dst] + g_edges[idx] * delta
+                    tokens = {name: orig_tokens[name] + acc[name] for name in self.valid_omics}
+            elif self.cross_edges is not None:
                 orig_tokens = dict(tokens)
                 for idx, (src, dst) in enumerate(self.cross_edges):
                     q_orig = orig_tokens[dst]
@@ -392,7 +554,10 @@ class TokenOSCARModel(BaseLightningModel):
                 fused_seq = self.self_gate(all_tokens, fused_seq)
             fused = fused_seq[:, 0]  # CLS token: (B, M)
         else:
-            fused = torch.cat(
-                [tokens[name].mean(dim=1) for name in self.valid_omics], dim=-1
-            )  # (B, 3*M)
+            if self.readout_omic is not None:
+                fused = tokens[self.readout_omic].mean(dim=1)
+            else:
+                fused = torch.cat(
+                    [tokens[name].mean(dim=1) for name in self.valid_omics], dim=-1
+                )  # (B, 3*M)
         return self.classifier(fused)
