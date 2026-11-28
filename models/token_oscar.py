@@ -24,6 +24,7 @@ class OmicToTokens(nn.Module):
         token_dim: int = 32,
         d_mid: int = 256,
         dropout: float = 0.4,
+        token_layernorm: bool = False,
     ):
         super().__init__()
         self.num_tokens = num_tokens
@@ -35,9 +36,11 @@ class OmicToTokens(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(d_mid, num_tokens * token_dim),
         )
+        self.post_norm = nn.LayerNorm(token_dim) if token_layernorm else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).view(x.size(0), self.num_tokens, self.token_dim)
+        out = self.net(x).view(x.size(0), self.num_tokens, self.token_dim)
+        return self.post_norm(out) if self.post_norm is not None else out
 
 
 class FeatureChunkToTokens(nn.Module):
@@ -70,19 +73,60 @@ class FeatureChunkToTokens(nn.Module):
         return self.proj(chunks)
 
 
+def _sparsemax(logits: torch.Tensor, dim: int = -1) -> torch.Tensor:
+    """Exact sparsemax projection onto the probability simplex (Martins & Astudillo, 2016)."""
+    z = logits - logits.max(dim=dim, keepdim=True).values
+    zs, _ = torch.sort(z, dim=dim, descending=True)
+    k = torch.arange(1, z.size(dim) + 1, device=z.device, dtype=z.dtype)
+    view_shape = [1] * z.ndim
+    view_shape[dim] = -1
+    k = k.view(*view_shape)
+    cumsum = zs.cumsum(dim=dim)
+    support = (1.0 + k * zs) > cumsum
+    k_z = support.sum(dim=dim, keepdim=True).clamp_min(1)
+    tau = (cumsum.gather(dim, k_z - 1) - 1.0) / k_z.to(z.dtype)
+    return (z - tau).clamp_min(0.0)
+
+
+def _sinkhorn(logits: torch.Tensor, n_iters: int = 5) -> torch.Tensor:
+    """Log-space Sinkhorn-Knopp normalization for near-doubly-stochastic attention."""
+    log_a = logits
+    for _ in range(n_iters):
+        log_a = log_a - torch.logsumexp(log_a, dim=-1, keepdim=True)
+        log_a = log_a - torch.logsumexp(log_a, dim=-2, keepdim=True)
+    return log_a.exp()
+
+
 class TokenCrossAttention(nn.Module):
     """Real multi-head cross-attention between two (B, T, M) token sequences."""
 
-    def __init__(self, embed_dim: int, num_heads: int = 4, dropout: float = 0.4):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int = 4,
+        dropout: float = 0.4,
+        attn_type: str = "softmax",
+    ):
         super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.attn_type = attn_type
         self.norm_q = nn.LayerNorm(embed_dim)
         self.norm_kv = nn.LayerNorm(embed_dim)
-        self.attn = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
+        if attn_type == "softmax":
+            self.attn = nn.MultiheadAttention(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                dropout=dropout,
+                batch_first=True,
+            )
+        else:
+            self.q_proj = nn.Linear(embed_dim, embed_dim)
+            self.k_proj = nn.Linear(embed_dim, embed_dim)
+            self.v_proj = nn.Linear(embed_dim, embed_dim)
+            self.out_proj = nn.Linear(embed_dim, embed_dim)
+            self.attn_drop = nn.Dropout(dropout)
         self.norm_ffn = nn.LayerNorm(embed_dim)
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, embed_dim * 4),
@@ -92,10 +136,45 @@ class TokenCrossAttention(nn.Module):
             nn.Dropout(dropout),
         )
 
+    def _custom_attn(self, q: torch.Tensor, kv: torch.Tensor) -> torch.Tensor:
+        B, Tq, M = q.shape
+        Tk = kv.size(1)
+        H, D = self.num_heads, self.head_dim
+        qh = self.q_proj(q).view(B, Tq, H, D).transpose(1, 2)   # (B, H, Tq, D)
+        kh = self.k_proj(kv).view(B, Tk, H, D).transpose(1, 2)  # (B, H, Tk, D)
+        vh = self.v_proj(kv).view(B, Tk, H, D).transpose(1, 2)  # (B, H, Tk, D)
+
+        if self.attn_type == "linear_elu":
+            qf = F.elu(qh) + 1.0
+            kf = F.elu(kh) + 1.0
+            kv_prod = torch.matmul(kf.transpose(-2, -1), vh)  # (B, H, D, D)
+            k_sum = kf.sum(dim=-2, keepdim=True)              # (B, H, 1, D)
+            num = torch.matmul(qf, kv_prod)                   # (B, H, Tq, D)
+            den = (qf * k_sum).sum(dim=-1, keepdim=True).clamp_min(1e-6)
+            out = num / den
+        else:
+            scores = torch.matmul(qh, kh.transpose(-2, -1)) / math.sqrt(D)  # (B, H, Tq, Tk)
+            if self.attn_type == "sigmoid":
+                weights = torch.sigmoid(scores - math.log(float(Tk)))
+            elif self.attn_type == "sparsemax":
+                weights = _sparsemax(scores, dim=-1)
+            elif self.attn_type == "sinkhorn":
+                weights = _sinkhorn(scores, n_iters=5)
+            else:
+                raise ValueError(f"Unknown attn_type: {self.attn_type}")
+            weights = self.attn_drop(weights)
+            out = torch.matmul(weights, vh)
+
+        out = out.transpose(1, 2).contiguous().view(B, Tq, M)
+        return self.out_proj(out)
+
     def forward(self, query: torch.Tensor, key_value: torch.Tensor) -> torch.Tensor:
         q = self.norm_q(query)
         kv = self.norm_kv(key_value)
-        attn_out, _ = self.attn(q, kv, kv, need_weights=False)
+        if self.attn_type == "softmax":
+            attn_out, _ = self.attn(q, kv, kv, need_weights=False)
+        else:
+            attn_out = self._custom_attn(q, kv)
         h = query + attn_out
         return h + self.ffn(self.norm_ffn(h))
 
@@ -158,6 +237,8 @@ class TokenOSCARModel(BaseLightningModel):
         fixed_gate_value: float | None = None,
         num_tokens_per_omic: dict[str, int] | None = None,
         encoder_type: str = "factorized",
+        attn_type: str = "softmax",
+        token_layernorm: bool = False,
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
@@ -190,6 +271,7 @@ class TokenOSCARModel(BaseLightningModel):
                         token_dim=token_dim,
                         d_mid=d_mid,
                         dropout=dropout,
+                        token_layernorm=token_layernorm,
                     )
                     for name in self.valid_omics
                 }
@@ -212,7 +294,7 @@ class TokenOSCARModel(BaseLightningModel):
         if self.use_cross_attention:
             if self.cross_edges is not None:
                 self.cross_layers = nn.ModuleList(
-                    [TokenCrossAttention(token_dim, n_heads, dropout) for _ in self.cross_edges]
+                    [TokenCrossAttention(token_dim, n_heads, dropout, attn_type=attn_type) for _ in self.cross_edges]
                 )
                 if self.use_gated_fusion:
                     self.cross_gates = nn.ModuleList(
@@ -222,8 +304,8 @@ class TokenOSCARModel(BaseLightningModel):
                         ]
                     )
             else:
-                self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout)
-                self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout)
+                self.cross_cnv_to_mrna = TokenCrossAttention(token_dim, n_heads, dropout, attn_type=attn_type)
+                self.cross_mrna_to_prot = TokenCrossAttention(token_dim, n_heads, dropout, attn_type=attn_type)
                 if self.use_gated_fusion:
                     self.gate_mrna = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)
                     self.gate_prot = TokenGatedFusion(token_dim, token_dim * 2, dropout, fixed_gate_value=fixed_gate_value)

@@ -247,3 +247,25 @@ Khi tách riêng nhóm gen giảm biểu hiện trong Luminal A (tránh trộn l
 - **Khóa chặt lý do chọn** `OmicToTokens` **(factorized bottleneck):** Cắt thẳng vector bảng gen thành các mảnh độc lập kiểu ViT (`FeatureChunkToTokens`) làm tụt thê thảm **-7.55% F1** (ở $64\times 32$) đến **-27.01% F1** (ở $256\times 32$), vì bảng omics không có tính cục bộ không gian như ảnh — bottleneck toàn cục $d_{\text{mid}}=256$ là bắt buộc để mỗi token tổng hợp được tương tác gen toàn omic.
 - **Về RPPA bất đối xứng ($T_P$):** Giảm $T_P=16$ tiết kiệm gần **2.0M tham số** và giúp tăng **+1.53 F1 trên COADREAD** (90.79%, nơi RPPA chỉ có 153 protein), nhưng trên hai tập lớn hơn (BRCA, LUNG) giữ đối xứng $T_P=256$ vẫn cho hiệu năng tổng thể cao nhất (**92.18%** vs **91.62%**).
 
+---
+
+## 8. Exp 8 — Thay thế `Softmax` trong Cross-Attention & Tinh chỉnh `OmicToTokens`
+
+**File kết quả:** `experiments/defense_followup/exp8_attn_tokenizer/exp8_results.json`
+
+| Biến thể | Params (BRCA) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Δ vs Default |
+|---|---|---|---|---|---|---|
+| **`TokenOSCAR (Softmax, d_mid=256)`** | 16,420,996 | **89.93 ± 2.15%** | **97.34 ± 1.30%** | **89.26 ± 2.55%** | **92.18%** | — |
+| `attn_sigmoid` ($\sigma(QK^\top/\sqrt{d_k}-\log T)$) | 16,420,996 | 89.62 ± 2.43% | 96.17 ± 1.27% | 89.26 ± 3.31% | 91.68% | -0.50% |
+| `tok_layernorm` (post-reshape LN) | 16,421,188 | 89.34 ± 2.51% | 97.20 ± 0.73% | 88.28 ± 1.35% | 91.61% | -0.57% |
+| `attn_sparsemax` (simplex thưa) | 16,420,996 | 89.10 ± 1.22% | 96.62 ± 0.99% | 88.73 ± 1.70% | 91.48% | -0.70% |
+| `tok_dmid512` (bottleneck 512) | 32,718,212 | 89.49 ± 2.69% | 96.91 ± 0.98% | 86.05 ± 6.16% | 90.82% | -1.36% |
+| `attn_sinkhorn` (5-iter OT) | 16,420,996 | 87.41 ± 1.55% | 96.32 ± 1.54% | 88.29 ± 2.67% | 90.67% | -1.51% |
+| `attn_linear_elu` (ELU+1) | 16,420,996 | 89.44 ± 1.34% | 96.31 ± 0.82% | 84.63 ± 10.83% | 90.13% | -2.05% |
+
+**Kết luận rút ra:**
+- **Thiết kế mặc định (`Softmax` + `OmicToTokens d_mid=256`, không post-LN) vẫn đạt #1 trên cả 3 tập (`92.18%` Avg F1)** — không cần thay đổi kiến trúc chính.
+- **Về thay thế Softmax:** `Sigmoid` (`91.68%`) và `Sparsemax` (`91.48%`) là hai lựa chọn thay thế ổn định nhất (`Sparsemax` giảm mạnh phương sai trên cả 3 tập xuống `±0.99%–1.70%`), trong khi `Sinkhorn` (`90.67%`) và `Linear ELU+1` (`90.13%`, COADREAD `±10.83%`) kém ổn định hơn.
+- **Về Tokenizer `OmicToTokens`:** Tăng bottleneck lên `d_mid=512` gấp đôi số tham số (`32.7M`) nhưng lại **giảm -1.36% Avg F1** (overfit mạnh trên COADREAD `86.05%`), khẳng định `d_mid=256` đã là điểm bão hòa tối ưu.
+
+
