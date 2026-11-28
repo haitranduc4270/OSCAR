@@ -5,8 +5,11 @@ and stays as a sequence of T tokens through ordered cross-attention (CNV -> mRNA
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .base import BaseLightningModel
 
@@ -35,6 +38,36 @@ class OmicToTokens(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).view(x.size(0), self.num_tokens, self.token_dim)
+
+
+class FeatureChunkToTokens(nn.Module):
+    """ViT/patch-style tokenizer: split (B, D) into T contiguous chunks and project each to M."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_tokens: int = 256,
+        token_dim: int = 32,
+        dropout: float = 0.4,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.num_tokens = num_tokens
+        self.token_dim = token_dim
+        self.chunk_size = max(1, math.ceil(input_dim / num_tokens))
+        self.padded_dim = self.chunk_size * num_tokens
+        self.proj = nn.Sequential(
+            nn.Linear(self.chunk_size, token_dim),
+            nn.LayerNorm(token_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.size(1) < self.padded_dim:
+            x = F.pad(x, (0, self.padded_dim - x.size(1)))
+        chunks = x.view(x.size(0), self.num_tokens, self.chunk_size)
+        return self.proj(chunks)
 
 
 class TokenCrossAttention(nn.Module):
@@ -123,6 +156,8 @@ class TokenOSCARModel(BaseLightningModel):
         use_self_gate: bool = True,
         use_pos_embed: bool = True,
         fixed_gate_value: float | None = None,
+        num_tokens_per_omic: dict[str, int] | None = None,
+        encoder_type: str = "factorized",
     ):
         super().__init__(num_classes=num_classes, lr=lr, weight_decay=weight_decay)
         if token_dim % n_heads != 0:
@@ -142,18 +177,37 @@ class TokenOSCARModel(BaseLightningModel):
         self.cross_order = tuple(cross_order)
         self.cross_edges = [tuple(e) for e in cross_edges] if cross_edges is not None else None
 
-        self.encoders = nn.ModuleDict(
-            {
-                name: OmicToTokens(
-                    input_dim=input_dims[name],
-                    num_tokens=num_tokens,
-                    token_dim=token_dim,
-                    d_mid=d_mid,
-                    dropout=dropout,
-                )
-                for name in self.valid_omics
-            }
-        )
+        self.num_tokens_map = {
+            name: (int(num_tokens_per_omic[name]) if num_tokens_per_omic and name in num_tokens_per_omic else num_tokens)
+            for name in self.valid_omics
+        }
+        if encoder_type == "factorized":
+            self.encoders = nn.ModuleDict(
+                {
+                    name: OmicToTokens(
+                        input_dim=input_dims[name],
+                        num_tokens=self.num_tokens_map[name],
+                        token_dim=token_dim,
+                        d_mid=d_mid,
+                        dropout=dropout,
+                    )
+                    for name in self.valid_omics
+                }
+            )
+        elif encoder_type == "chunk":
+            self.encoders = nn.ModuleDict(
+                {
+                    name: FeatureChunkToTokens(
+                        input_dim=input_dims[name],
+                        num_tokens=self.num_tokens_map[name],
+                        token_dim=token_dim,
+                        dropout=dropout,
+                    )
+                    for name in self.valid_omics
+                }
+            )
+        else:
+            raise ValueError(f"Unknown encoder_type: {encoder_type}")
 
         if self.use_cross_attention:
             if self.cross_edges is not None:
@@ -183,7 +237,7 @@ class TokenOSCARModel(BaseLightningModel):
             )
             self.cls_token = nn.Parameter(torch.randn(1, 1, token_dim) * 0.02)
             if self.use_pos_embed:
-                seq_len = 1 + len(self.valid_omics) * num_tokens
+                seq_len = 1 + sum(self.num_tokens_map[name] for name in self.valid_omics)
                 self.pos_embed = nn.Parameter(torch.randn(1, seq_len, token_dim) * 0.02)
 
             enc_layer = nn.TransformerEncoderLayer(
