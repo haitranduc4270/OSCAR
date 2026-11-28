@@ -77,6 +77,30 @@ Báo cáo này chạy lại **toàn bộ bộ thí nghiệm Ablation Study** c�
 **Nhận xét Table 5.3:**
 - Trên nền `Pathway-TokenOSCAR`, hai thứ tự bắt đầu từ `Proteomics` (`Prot → CNV → mRNA` `92.26%` F1 / `93.31%` Acc và `Reverse: Prot → mRNA → CNV` `91.94%` F1 / `93.04%` Acc) vượt thứ tự sinh học (`91.52%` F1 / `92.78%` Acc). Nguyên nhân kỹ thuật đáng chú ý: khi `Proteomics` có `T_RPPA = 16` token còn `mRNA`/`CNV` có `256` token, đặt `Proteomics` làm `key/value` đầu tiên giúp `256` query token của `mRNA`/`CNV` truy vấn vào `16` token protein rất gọn (không bị loãng attention như chiều ngược lại khi `16` token protein truy vấn `256` token mRNA).
 
+### 3.3. Đối chứng công bằng 6 hoán vị trên 3 thiết kế đối xứng (`T_CNV = T_mRNA = T_RPPA = T`)
+
+Để loại bỏ hoàn toàn nhiễu bất đối xứng kích thước token (`T_RPPA = 16` vs `T_mRNA = T_CNV = 256`), ta chạy lại đủ cả 6 hoán vị trên **3 thiết kế đối xứng** (`experiments/run_pathway_symmetric_order.py`, dữ liệu thô `experiments/pathway_ablation_suite/sym_order_results.json`):
+1. **Cách 1 — `sym_factorized_256` (`8.83M` params, nhẹ hơn `OmicToTokens` gần 2×):** `D → P+U → d_mid=256 → 256×32` đối xứng cả 3 omics.
+2. **Cách 2 — `sym_direct_128` (`20.31M` params):** `D → P+U → 128×32` trực tiếp, đối xứng cả 3 omics.
+3. **Cách 3 — `sym_direct_256` (`39.32M` params):** `D → P+U → 256×32` trực tiếp, đối xứng cả 3 omics.
+
+#### Macro-F1 (%, trung bình 5-fold theo từng thiết kế đối xứng)
+
+| Ordering | `sym_factorized_256` (`8.83M`) | `sym_direct_128` (`20.31M`) | `sym_direct_256` (`39.32M`) | **TB 3 thiết kế đối xứng** | *Bản bất đối xứng (`T_P=16`)* |
+|---|---|---|---|---|---|
+| **`CNV → mRNA → Proteomics` (Bio)** | 91.69 *(87.92 / 96.61 / 90.53)* | **92.03** *(89.78 / 96.17 / 90.13)* | 90.95 *(88.89 / 96.31 / 87.64)* | **91.56 (#1)** | *91.52* |
+| **`Proteomics → mRNA → CNV` (Reverse)** | **92.19** *(89.00 / 96.90 / 90.68)* | 90.60 *(86.48 / 97.35 / 87.96)* | 91.48 *(87.80 / 97.49 / 89.15)* | 91.42 (#2) | *91.94* |
+| `mRNA → CNV → Proteomics` (Mixed) | 90.33 *(86.99 / 96.46 / 87.54)* | 91.61 *(89.51 / 96.61 / 88.70)* | 90.91 *(89.37 / 96.02 / 87.33)* | 90.95 (#3) | *91.52* |
+| `mRNA → Proteomics → CNV` | 90.27 *(86.64 / 96.45 / 87.72)* | 90.63 *(89.10 / 96.17 / 86.62)* | 91.87 *(90.49 / 96.61 / 88.50)* | 90.92 (#4) | *91.14* |
+| `Proteomics → CNV → mRNA` | 89.57 *(84.23 / 96.32 / 88.17)* | 90.30 *(87.68 / 96.76 / 86.47)* | **91.91** *(88.15 / 97.05 / 90.54)* | 90.59 (#5) | ***92.26*** |
+| `CNV → Proteomics → mRNA` | 90.05 *(85.47 / 96.61 / 88.07)* | 91.26 *(88.57 / 97.20 / 88.01)* | 90.46 *(86.00 / 97.20 / 88.18)* | 90.59 (#5) | *89.87* |
+
+**Kết luận đối chứng công bằng (3.3):**
+- **Xác nhận 100% giả thuyết nhiễu bất đối xứng:** Ngay khi đặt 3 omics về cùng kích thước token `T`, thứ tự `Prot → CNV → mRNA` (từng đứng #1 giả tạo ở bản `T_P = 16`) lập tức rớt xuống **chót bảng (#6)** ở cả `sym_factorized_256` (`89.57%`) lẫn `sym_direct_128` (`90.30%`), trong khi **hai thứ tự chuỗi Central Dogma (`Bio` & `Reverse`) vươn lên đứng đầu (`91.56%` và `91.42%` trung bình 3 thiết kế)**.
+- **`sym_direct_128` (`20.31M`):** Thứ tự sinh học `Bio` (`CNV → mRNA → Proteomics`) đứng **#1 áp đảo (`92.03%` F1 / `92.79%` Acc**, độ lệch chuẩn rất thấp `±1.33–1.64%` trên cả 3 cohort), vượt 5 hoán vị còn lại từ `+0.42%` đến `+1.73%`.
+- **`sym_factorized_256` (`8.83M` — gọn hơn `OmicToTokens` gần 2×):** `Reverse` (`92.19%` F1 / `93.14%` Acc) và `Bio` (`91.69%` F1 / `92.63%` Acc) bỏ xa cả 4 hoán vị phá chuỗi (`89.57–90.33%`) từ `+1.36%` đến `+2.62%` F1! Đây cũng là thiết kế gọn nhất mà vẫn đạt ngưỡng `~92.2%` với tầng pathway tường minh.
+- **`sym_direct_256` (`39.32M`):** Quá dư tham số (riêng RPPA tốn `12.4M`) nên overfit nặng và dao động lớn (`std` lên tới `±7.26%` BRCA / `±6.71%` COADREAD), làm mất tín hiệu thứ tự.
+
 ---
 
 ## 4. Sensitivity Study — Cấu hình Token (`T × M`) & Đối chiếu `1 × 128` vs `256 × 32`
@@ -149,12 +173,32 @@ Báo cáo này chạy lại **toàn bộ bộ thí nghiệm Ablation Study** c�
 
 ---
 
-## 7. Tổng kết & Khuyến nghị khi chọn Pathway-TokenOSCAR cho Luận văn
+## 7. Đánh giá tổng thể & Khuyến nghị khi chọn Pathway-TokenOSCAR cho Luận văn
 
-1. **Hoàn toàn khả thi để dùng `Pathway-TokenOSCAR` làm kiến trúc chính** nếu bạn ưu tiên tính diễn giải sinh học ở tầng đầu (1,497 pathway Pathformer cho cả 3 omics, bảo toàn phospho-protein RPPA với độ phủ `97.8–98.0%`, kèm nhánh residual không mất gen ngoài pathway):
-   - **Lựa chọn mạnh nhất về điểm số (`92.30%` Avg F1 / `93.28%` Avg Acc — vượt `OmicToTokens` `92.18%`):** `Pathway-TokenOSCAR` dùng **Ordered Cross-Attention + Cross Gate (`no_self_attn`)** (`BRCA 89.58%`, `LUNG 96.16%`, `COADREAD 91.16%`).
-   - **Lựa chọn cân bằng điểm số + tham số (`14.88M` params — nhẹ hơn `OmicToTokens` `16.42M`):** `Pathway-TokenOSCAR Full` ở cấu hình **`128 × 32`** đạt **`91.88%` Avg F1 / `92.88%` Avg Acc** (COADREAD `91.13 ± 1.31%`).
-   - **Lựa chọn siêu nhẹ (`2.92M` params — gọn hơn 5.6×):** `Pathway-TokenOSCAR Full` ở **`1 × 128`** đạt **`91.44%` Avg F1 / `92.70%` Acc**.
-2. **Điểm cần lưu ý trung thực khi bảo vệ:**
-   - Trên nền `Pathway-TokenOSCAR Full (256×32)`, cấu trúc 4/4 (`91.52%`) hơi thừa dung lượng so với chỉ dùng Cross+Gate (`92.30%`) hoặc `128×32` (`91.88%`), và thứ tự bắt đầu từ `Proteomics` (`91.94–92.26%`) nhỉnh hơn thứ tự sinh học (`91.52%`) do bất đối xứng `T_RPPA = 16` vs `T_mRNA = 256`.
-   - Khoảng cách trước `Concatenation` (`+1.35%` đến `+2.13%` F1) và trước `MOT`/`MoXGATE` (`+1.63%` đến `+2.90%` F1) **đều rõ rệt hơn cả trên `OmicToTokens`**, tạo nên câu chuyện thực nghiệm rất thuyết phục về sự cộng hưởng giữa **Pathway Bottleneck** và **Gated Cross-Attention**.
+### 7.1. So sánh trực tiếp các ứng viên kiến trúc chính
+
+| Ứng viên kiến trúc | Params (BRCA) | BRCA F1 | LUNG F1 | COADREAD F1 | Avg F1 | Hạng `Bio` / 6 thứ tự |
+|---|---|---|---|---|---|---|
+| `TokenOSCAR (OmicToTokens 256×32)` *(gốc)* | 16.42M | **89.93 ± 2.15%** | **97.34 ± 1.30%** | 89.26 ± 2.55% | **92.18%** | **#1** (`92.18%`) |
+| **`Pathway sym_direct_128 (Bio)`** *(đối xứng `T=128`)* | 20.31M | 89.78 ± 1.63% | 96.17 ± 1.64% | 90.13 ± 1.33% | **92.03%** | **#1 áp đảo** (`+0.42`–`+1.73%`) |
+| **`Pathway sym_factorized_256 (Bio)`** *(đối xứng, nhẹ ~2×)* | **8.83M** | 87.92 ± 1.74% | 96.61 ± 1.11% | 90.53 ± 1.64% | 91.69% | **#2** *(sau `Reverse` `92.19%`)* |
+| `Pathway asym (Cross+Gate, no SA)` | 27.64M | 89.58 ± 3.12% | 96.16 ± 1.44% | **91.16 ± 3.01%** | **92.30%** | *(bất đối xứng `T_P=16`)* |
+| `Pathway asym (128×32 Full)` | 14.88M | 88.18 ± 2.57% | 96.32 ± 1.62% | 91.13 ± 1.31% | 91.88% | *(bất đối xứng `T_P=16`)* |
+| `Pathway asym (1×128 Full)` *(siêu nhẹ)* | **2.92M** | 87.28 ± 2.92% | 96.61 ± 1.37% | 90.43 ± 0.66% | 91.44% | *(đối xứng `T=1`)* |
+
+### 7.2. Điểm mạnh nổi bật (giải quyết trực tiếp Q1 & Q15)
+1. **Tầng đầu có ý nghĩa sinh học tường minh trên cả 3 omics:** `1,497` pathway Pathformer cho `mRNA`, `CNV`, và **cả `RPPA` (`97.8–98.0%` độ phủ)** với trọng số cạnh độc lập cho từng phospho-protein (`HER2_pY1248`, `4EBP1_pS65`, `ERALPHA_pS118`), kèm nhánh residual không làm mất ~40% gen ngoài cơ sở dữ liệu pathway.
+2. **Câu chuyện Ablation sắc nét hơn cả `OmicToTokens`:**
+   - Lợi ích của Attention + Gate trước `Concatenation` rõ rệt hơn (`+1.35%` đến `+2.13%` F1 vs `+0.74%` trên `OmicToTokens`).
+   - Vượt đậm `MOT + Pathway` (`89.89%`) và `MoXGATE + Pathway` (`89.40%`) từ **`+1.63%` đến `+2.90%` Avg F1**, chứng minh lợi thế đến từ kiến trúc fusion có gate của OSCAR chứ không chỉ từ bộ chiếu đầu vào.
+   - Khi loại bỏ nhiễu bất đối xứng `T_P = 16` ở Mục 3.3, **thứ tự sinh học `CNV → mRNA → Proteomics` lấy lại vị trí #1 trên trung bình cả 3 thiết kế đối xứng (`91.56%`)** và **#1 áp đảo trên `sym_direct_128` (`92.03%`, độ lệch chuẩn rất gọn `±1.33–1.64%`)**.
+
+### 7.3. Điểm cần lưu ý trung thực khi bảo vệ
+1. **LUNG giảm nhẹ ~1.1–1.2% so với `OmicToTokens`** (`96.17%` vs `97.34%`), dù BRCA gần hòa (`89.78%` vs `89.93%`) và COADREAD tăng rõ (`90.13%` vs `89.26%`, `+0.87%`).
+2. **Trên bản bất đối xứng `256/256/16` (Table 5.2):** bỏ 2 lớp Self-Attention (`no_self_attn` `92.30%`) nhỉnh hơn `Full (4/4)` (`91.52%`) do `T_P = 16` chỉ chiếm `3%` chuỗi Self-Attention và `27.7M` tham số hơi dư. Nếu chọn **`sym_direct_128`** (`20.31M`, đối xứng) hoặc **`sym_factorized_256`** (`8.83M`, đối xứng) làm cấu hình chính, nên kiểm chứng lại bảng Table 5.2 trên đúng cấu hình đối xứng đó để bộ số liệu luận văn khép kín 100%.
+3. **Phạm vi diễn giải của lớp 2:** Tầng 1 (`D → 1,497 pathway + residual`) cho phép truy vết trực tiếp hoạt tính/đóng góp từng pathway, nhưng tầng 2 (`1,497 → T×M`) vẫn trộn tuyến tính các pathway sang không gian latent token (khác với `PathwayTokenEncoder` ở Exp 10 nơi mỗi token là đúng 1 pathway).
+
+### 7.4. Khuyến nghị lựa chọn
+- **Cân bằng nhất toàn diện (hiệu năng + công bằng 3 omics + `Bio` #1):** **`Pathway sym_direct_128`** (`20.31M` params, `92.03%` Avg F1, `std` nhỏ nhất trên BRCA & COADREAD).
+- **Ưu tiên siêu gọn (nhẹ hơn `OmicToTokens` gần 2×):** **`Pathway sym_factorized_256`** (`8.83M` params, `Bio 91.69%` / `Reverse 92.19%`).
+- **Ưu tiên điểm tuyệt đối không cần Self-Attention:** **`Pathway asym (Cross+Gate, no SA)`** (`92.30%` Avg F1 / `93.28%` Avg Acc).

@@ -254,6 +254,7 @@ class TokenOSCARModel(BaseLightningModel):
         pathway_specs: dict[str, dict] | None = None,
         pathway_unmapped_dim: int = 0,
         pathway_unmapped_dim_per_omic: dict[str, int] | None = None,
+        pathway_mid_dim: int | None = None,
         pathway_proj_per_pathway: int = 8,
         learnable_edges: bool = False,
         fixed_edge_weights: list[float] | None = None,
@@ -350,6 +351,7 @@ class TokenOSCARModel(BaseLightningModel):
                             dropout=dropout,
                             unmapped_dim=unmapped_dim_map[name],
                             token_layernorm=token_layernorm,
+                            bottleneck_mid_dim=pathway_mid_dim,
                         )
                         if name in pathway_specs
                         else OmicToTokens(

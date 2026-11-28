@@ -277,6 +277,7 @@ class PathwayBottleneckToTokens(nn.Module):
         dropout: float = 0.4,
         unmapped_dim: int = 0,
         token_layernorm: bool = False,
+        bottleneck_mid_dim: int | None = None,
     ):
         super().__init__()
         self.num_pathways = int(spec["num_pathways"])
@@ -307,12 +308,25 @@ class PathwayBottleneckToTokens(nn.Module):
             self.unmapped_proj = None
             bottleneck_dim = self.num_pathways
 
-        self.expand = nn.Sequential(
-            nn.LayerNorm(bottleneck_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(bottleneck_dim, self.num_tokens * self.token_dim),
-        )
+        if bottleneck_mid_dim is not None and int(bottleneck_mid_dim) > 0:
+            mid = int(bottleneck_mid_dim)
+            self.expand = nn.Sequential(
+                nn.LayerNorm(bottleneck_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(bottleneck_dim, mid),
+                nn.LayerNorm(mid),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(mid, self.num_tokens * self.token_dim),
+            )
+        else:
+            self.expand = nn.Sequential(
+                nn.LayerNorm(bottleneck_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(bottleneck_dim, self.num_tokens * self.token_dim),
+            )
         self.post_norm = nn.LayerNorm(self.token_dim) if token_layernorm else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
